@@ -46,12 +46,21 @@
 			const openvdb = 'https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/';
 
 			const models = {
-				'torus knot': { url: 'models/torusknot.vdb', threshold: 0.3, range: 0.2, opacity: 0.05 },
-				'smoke (openvdb.org)': { url: openvdb + 'smoke.vdb', threshold: 0.1, range: 0.1, opacity: 0.03 },
-				'smoke2 (openvdb.org)': { url: openvdb + 'smoke2.vdb', threshold: 0.02, range: 0.02, opacity: 0.08 }
+				'torus knot': { url: 'models/torusknot.vdb', grid: 'density', threshold: 0.3, range: 0.2, opacity: 0.05 },
+				'smoke (openvdb.org)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
+				'smoke2 (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
+				'smoke2 velocity (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'v', view: 'direction', scale: 0.05, threshold: 0.15, range: 0.1, opacity: 0.04 },
+				'fire (openvdb.org)': { url: openvdb + 'fire.vdb', grid: 'temperature', view: 'blackbody', scale: 0.025, threshold: 0.05, range: 0.05, opacity: 0.06 }
 			};
 
-			const parameters = { model: 'torus knot', threshold: 0, range: 0, opacity: 0, steps: 100 };
+			const views = {
+				scalar: [ 'flat', 'blackbody' ],
+				vector: [ 'magnitude', 'direction' ]
+			};
+
+			const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2 };
+
+			const parameters = { model: 'torus knot', view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100 };
 
 			const info = document.getElementById( 'info' );
 
@@ -73,6 +82,7 @@
 
 			const gui = new GUI();
 			gui.add( parameters, 'model', Object.keys( models ) ).onChange( load );
+			let viewController = gui.add( parameters, 'view', views.scalar ).onChange( update );
 			gui.add( parameters, 'threshold', 0, 1, 0.01 ).onChange( update );
 			gui.add( parameters, 'range', 0, 1, 0.01 ).onChange( update );
 			gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update );
@@ -88,7 +98,7 @@
 
 				info.textContent = 'loading ' + parameters.model + '...';
 
-				const grids = await new VDBLoader().loadAsync( model.url );
+				const grids = await new VDBLoader().setGridNames( [ model.grid ] ).loadAsync( model.url );
 				const grid = grids[ 0 ];
 
 				if ( mesh !== null ) {
@@ -102,7 +112,7 @@
 				const center = grid.bbox.getCenter( new THREE.Vector3() );
 				const size = grid.bbox.getSize( new THREE.Vector3() ).addScalar( 1 );
 
-				mesh = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), createMaterial( grid.texture ) );
+				mesh = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), createMaterial( grid.texture, model ) );
 				mesh.matrixAutoUpdate = false;
 				mesh.matrix.copy( grid.transform ).multiply( new THREE.Matrix4().makeTranslation( center ).scale( size ) );
 				mesh.updateMatrixWorld( true );
@@ -117,9 +127,13 @@
 				camera.far = radius * 10;
 				camera.updateProjectionMatrix();
 
+				const type = grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
+
+				parameters.view = model.view ?? views[ type ][ 0 ];
 				parameters.threshold = model.threshold;
 				parameters.range = model.range;
 				parameters.opacity = model.opacity;
+				viewController = viewController.options( views[ type ] ).onChange( update );
 				gui.controllersRecursive().forEach( c => c.updateDisplay() );
 
 				update();
@@ -133,6 +147,7 @@
 
 				if ( mesh === null ) return;
 
+				mesh.material.uniforms.mode.value = modes[ parameters.view ];
 				mesh.material.uniforms.threshold.value = parameters.threshold;
 				mesh.material.uniforms.range.value = parameters.range;
 				mesh.material.uniforms.opacity.value = parameters.opacity;
@@ -140,7 +155,7 @@
 
 			}
 
-			function createMaterial( texture ) {
+			function createMaterial( texture, model ) {
 
 				const vertexShader = /* glsl */`
 					in vec3 position;
@@ -176,6 +191,9 @@
 
 					uniform vec3 base;
 					uniform sampler3D map;
+					uniform bool vector;
+					uniform float scale;
+					uniform int mode;
 
 					uniform float threshold;
 					uniform float range;
@@ -193,9 +211,30 @@
 
 					}
 
-					float density( vec3 p ) {
+					vec3 blackbody( float t ) {
 
-						return smoothstep( threshold - range, threshold + range, texture( map, p + 0.5 ).r );
+						float k = mix( 8.0, 65.0, clamp( t, 0.0, 1.0 ) );
+
+						return clamp( vec3(
+							1.0,
+							0.390081578769 * log( k ) - 0.631841443788,
+							k <= 19.0 ? 0.0 : 0.543206789110 * log( k - 10.0 ) - 1.19625408914
+						), 0.0, 1.0 ) * t;
+
+					}
+
+					float density( vec4 value ) {
+
+						return smoothstep( threshold - range, threshold + range, ( vector ? length( value.rgb ) : value.r ) * scale );
+
+					}
+
+					vec3 shade( vec4 value ) {
+
+						if ( mode == 1 ) return blackbody( value.r * scale ) * 2.0;
+						if ( mode == 2 ) return 0.5 + 0.5 * normalize( value.rgb + 1e-6 );
+
+						return base;
 
 					}
 
@@ -216,9 +255,10 @@
 
 						for ( float i = 0.0; i < steps; i += 1.0 ) {
 
-							float d = density( p ) * opacity;
+							vec4 value = texture( map, p + 0.5 );
+							float d = density( value ) * opacity;
 
-							ac.rgb += ( 1.0 - ac.a ) * d * base;
+							ac.rgb += ( 1.0 - ac.a ) * d * shade( value );
 							ac.a += ( 1.0 - ac.a ) * d;
 
 							if ( ac.a >= 0.95 ) break;
@@ -239,6 +279,9 @@
 					uniforms: {
 						base: { value: new THREE.Color( 0xf0e0d0 ) },
 						map: { value: texture },
+						vector: { value: texture.format === THREE.RGBAFormat },
+						scale: { value: model.scale ?? 1 },
+						mode: { value: 0 },
 						cameraPos: { value: new THREE.Vector3() },
 						threshold: { value: 0 },
 						range: { value: 0 },

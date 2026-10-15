@@ -7,10 +7,10 @@ import { VDBLoader } from '../VDBLoader.js';
 const fixtures = new URL( './fixtures/', import.meta.url );
 const reference = JSON.parse( readFileSync( new URL( './reference.json', import.meta.url ) ) );
 
-function load( file ) {
+function load( file, names = null ) {
 
 	const buffer = readFileSync( new URL( file, fixtures ) );
-	return new VDBLoader().parse( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
+	return new VDBLoader().setGridNames( names ).parse( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
 
 }
 
@@ -27,7 +27,7 @@ for ( const file of readdirSync( fixtures ).filter( f => f.endsWith( '.vdb' ) ).
 
 			const grid = grids.find( g => g.name === expected.name );
 
-			assert.equal( grid.background, expected.background, expected.name + ' background' );
+			assert.deepEqual( [ grid.background ].flat().map( Math.fround ), [ expected.background ].flat().map( Math.fround ), expected.name + ' background' );
 
 			grid.transform.elements.forEach( ( value, i ) => {
 
@@ -53,12 +53,23 @@ for ( const file of readdirSync( fixtures ).filter( f => f.endsWith( '.vdb' ) ).
 
 		}
 
-		if ( file.startsWith( 'multi' ) ) {
+		if ( file.startsWith( 'unsupported' ) ) {
 
-			assert.match( String( warn.mock.calls[ 0 ].arguments[ 0 ] ), /Skipping unsupported grid "vel"/ );
+			assert.match( String( warn.mock.calls[ 0 ].arguments[ 0 ] ), /Skipping unsupported grid "ids"/ );
+
+		} else {
+
+			assert.equal( warn.mock.callCount(), 0 );
 
 		}
 
 	} );
 
 }
+
+test( 'setGridNames', () => {
+
+	assert.deepEqual( load( 'multi_zip_mask.vdb', [ 'temperature', 'vel' ] ).map( g => g.name ).sort(), [ 'temperature', 'vel' ] );
+	assert.deepEqual( load( 'multi_zip_mask.vdb', [ 'missing' ] ), [] );
+
+} );

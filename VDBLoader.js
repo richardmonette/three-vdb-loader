@@ -7,6 +7,7 @@ import {
 	LinearFilter,
 	Loader,
 	Matrix4,
+	RGBAFormat,
 	RedFormat
 } from 'three';
 import { unzlibSync } from 'fflate';
@@ -35,13 +36,22 @@ const NO_MASK_AND_ALL_VALS = 6;
 const HALF_FLOAT_SUFFIX = '_HalfFloat';
 const VALUE_SIZES = { half: 2, float: 4, double: 8 };
 
-const MAX_DENSE_VOXELS = 1 << 28;
+const VALUE_TYPES = {
+	half: { base: 'half', components: 1 },
+	float: { base: 'float', components: 1 },
+	double: { base: 'double', components: 1 },
+	vec3s: { base: 'float', components: 3 },
+	vec3d: { base: 'double', components: 3 }
+};
+
+const MAX_DENSE_VALUES = 1 << 28;
 
 /**
  * A loader for the [OpenVDB](https://www.openvdb.org/) format.
  *
- * Scalar grids (`float`, `double` and `half`) are converted into dense
- * {@link Data3DTexture} objects covering the active voxels of each grid.
+ * Scalar grids (`float`, `double` and `half`) and vector grids (`vec3s` and
+ * `vec3d`) are converted into dense {@link Data3DTexture} objects covering the
+ * active voxels of each grid. Vector grids use `RGBAFormat`.
  * Uncompressed, zip and blosc compressed files are supported.
  *
  * ```js
@@ -54,6 +64,38 @@ const MAX_DENSE_VOXELS = 1 << 28;
  * @augments Loader
  */
 class VDBLoader extends Loader {
+
+	/**
+	 * Constructs a new VDB loader.
+	 *
+	 * @param {LoadingManager} [manager] - The loading manager.
+	 */
+	constructor( manager ) {
+
+		super( manager );
+
+		/**
+		 * The names of the grids to load, or `null` to load all grids.
+		 *
+		 * @type {?Array<string>}
+		 * @default null
+		 */
+		this.gridNames = null;
+
+	}
+
+	/**
+	 * Sets the names of the grids to load. Other grids are skipped.
+	 *
+	 * @param {?Array<string>} names - The grid names, or `null` to load all grids.
+	 * @return {VDBLoader} A reference to this loader.
+	 */
+	setGridNames( names ) {
+
+		this.gridNames = names;
+		return this;
+
+	}
 
 	/**
 	 * Starts loading from the given URL and passes the loaded grids
@@ -100,7 +142,7 @@ class VDBLoader extends Loader {
 	}
 
 	/**
-	 * Parses the given OpenVDB data and returns the scalar grids it contains.
+	 * Parses the given OpenVDB data and returns the grids it contains.
 	 *
 	 * @param {ArrayBuffer} buffer - The raw OpenVDB data as an array buffer.
 	 * @return {Array<VDBLoader~Grid>} The parsed grids.
@@ -159,6 +201,8 @@ class VDBLoader extends Loader {
 
 		for ( const descriptor of descriptors ) {
 
+			if ( this.gridNames !== null && this.gridNames.includes( descriptor.name ) === false ) continue;
+
 			let type = descriptor.type;
 			let saveFloatAsHalf = false;
 
@@ -169,7 +213,7 @@ class VDBLoader extends Loader {
 
 			}
 
-			const match = /^Tree_(float|double|half)_5_4_3$/.exec( type );
+			const match = /^Tree_(float|double|half|vec3s|vec3d)_5_4_3$/.exec( type );
 
 			if ( match === null || descriptor.instanceParent !== '' ) {
 
@@ -364,13 +408,14 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 		compression: reader.uint32(),
 		metadata: readMetadata( reader ),
 		transform: readTransform( reader ),
-		valueType,
+		base: VALUE_TYPES[ valueType ].base,
+		components: VALUE_TYPES[ valueType ].components,
 		saveFloatAsHalf
 	};
 
 	reader.skip( 4 ); // buffer count
 
-	grid.background = readValue( reader, valueType );
+	grid.background = readValue( reader, grid );
 
 	const tileCount = reader.uint32();
 	const childCount = reader.uint32();
@@ -381,7 +426,7 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 	for ( let i = 0; i < tileCount; i ++ ) {
 
 		const origin = [ reader.int32(), reader.int32(), reader.int32() ];
-		const value = readValue( reader, valueType );
+		const value = readValue( reader, grid );
 		const active = reader.uint8() !== 0;
 		tiles.push( { origin, value, active } );
 
@@ -413,7 +458,7 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 		type: valueType,
 		metadata: grid.metadata,
 		transform: grid.transform,
-		background: grid.background,
+		background: grid.components === 1 ? grid.background[ 0 ] : grid.background,
 		bbox,
 		texture: null
 	};
@@ -427,20 +472,24 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 	const height = bounds[ 4 ] - bounds[ 1 ] + 1;
 	const depth = bounds[ 5 ] - bounds[ 2 ] + 1;
 
-	if ( width * height * depth > MAX_DENSE_VOXELS ) {
+	const stride = grid.components === 1 ? 1 : 4;
+
+	if ( width * height * depth * stride > MAX_DENSE_VALUES ) {
 
 		throw new Error( 'THREE.VDBLoader: Grid "' + name + '" is too large for a dense texture (' + width + 'x' + height + 'x' + depth + ').' );
 
 	}
 
-	const data = new Float32Array( width * height * depth ).fill( grid.background );
-	const dense = { data, bounds, width, height };
+	const data = new Float32Array( width * height * depth * stride );
+	const dense = { data, bounds, width, height, stride };
+
+	fillCube( dense, bounds, Infinity, grid.background );
 
 	for ( const tile of tiles ) fillCube( dense, tile.origin, 1 << 12, tile.value );
 	for ( const child of children ) fillNode( dense, child );
 
 	const texture = new Data3DTexture( data, width, height, depth );
-	texture.format = RedFormat;
+	texture.format = stride === 1 ? RedFormat : RGBAFormat;
 	texture.type = FloatType;
 	texture.minFilter = LinearFilter;
 	texture.magFilter = LinearFilter;
@@ -453,20 +502,27 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 
 }
 
-function readValue( reader, valueType ) {
+function readValue( reader, grid ) {
 
-	const view = reader.view;
-	const offset = reader.offset;
+	const value = [];
 
-	reader.offset += VALUE_SIZES[ valueType ];
+	for ( let c = 0; c < grid.components; c ++ ) {
 
-	switch ( valueType ) {
+		const offset = reader.offset;
 
-		case 'half': return DataUtils.fromHalfFloat( view.getUint16( offset, true ) );
-		case 'float': return view.getFloat32( offset, true );
-		case 'double': return view.getFloat64( offset, true );
+		reader.offset += VALUE_SIZES[ grid.base ];
+
+		switch ( grid.base ) {
+
+			case 'half': value.push( DataUtils.fromHalfFloat( reader.view.getUint16( offset, true ) ) ); break;
+			case 'float': value.push( reader.view.getFloat32( offset, true ) ); break;
+			case 'double': value.push( reader.view.getFloat64( offset, true ) ); break;
+
+		}
 
 	}
+
+	return value;
 
 }
 
@@ -527,13 +583,13 @@ function readCompressedValues( reader, grid, count, valueMask ) {
 	const metadata = reader.uint8();
 
 	let inactiveVal1 = grid.background;
-	let inactiveVal0 = metadata === NO_MASK_OR_INACTIVE_VALS ? grid.background : - grid.background;
+	let inactiveVal0 = metadata === NO_MASK_OR_INACTIVE_VALS ? grid.background : grid.background.map( v => - v );
 
 	if ( metadata === NO_MASK_AND_ONE_INACTIVE_VAL || metadata === MASK_AND_ONE_INACTIVE_VAL || metadata === MASK_AND_TWO_INACTIVE_VALS ) {
 
-		inactiveVal0 = readValue( reader, grid.valueType );
+		inactiveVal0 = readValue( reader, grid );
 
-		if ( metadata === MASK_AND_TWO_INACTIVE_VALS ) inactiveVal1 = readValue( reader, grid.valueType );
+		if ( metadata === MASK_AND_TWO_INACTIVE_VALS ) inactiveVal1 = readValue( reader, grid );
 
 	}
 
@@ -551,17 +607,19 @@ function readCompressedValues( reader, grid, count, valueMask ) {
 
 	if ( storedCount === count ) return stored;
 
-	const values = new Float32Array( count );
+	const components = grid.components;
+	const values = new Float32Array( count * components );
 
 	for ( let i = 0, j = 0; i < count; i ++ ) {
 
 		if ( isOn( valueMask, i ) ) {
 
-			values[ i ] = stored[ j ++ ];
+			for ( let c = 0; c < components; c ++ ) values[ i * components + c ] = stored[ j * components + c ];
+			j ++;
 
 		} else {
 
-			values[ i ] = selectionMask !== null && isOn( selectionMask, i ) ? inactiveVal1 : inactiveVal0;
+			values.set( selectionMask !== null && isOn( selectionMask, i ) ? inactiveVal1 : inactiveVal0, i * components );
 
 		}
 
@@ -575,8 +633,9 @@ function readData( reader, grid, count ) {
 
 	if ( grid.saveFloatAsHalf && count === 0 ) return new Float32Array( 0 );
 
-	const valueType = grid.saveFloatAsHalf ? 'half' : grid.valueType;
-	const byteLength = count * VALUE_SIZES[ valueType ];
+	const valueType = grid.saveFloatAsHalf ? 'half' : grid.base;
+	const length = count * grid.components;
+	const byteLength = length * VALUE_SIZES[ valueType ];
 
 	let bytes;
 
@@ -609,9 +668,9 @@ function readData( reader, grid, count ) {
 	}
 
 	const view = new DataView( bytes.buffer, bytes.byteOffset, bytes.byteLength );
-	const values = new Float32Array( count );
+	const values = new Float32Array( length );
 
-	for ( let i = 0; i < count; i ++ ) {
+	for ( let i = 0; i < length; i ++ ) {
 
 		switch ( valueType ) {
 
@@ -865,7 +924,7 @@ function expandByNode( bounds, node ) {
 
 function fillCube( dense, origin, size, value ) {
 
-	const { data, bounds, width, height } = dense;
+	const { data, bounds, width, height, stride } = dense;
 
 	const x0 = Math.max( origin[ 0 ], bounds[ 0 ] ), x1 = Math.min( origin[ 0 ] + size - 1, bounds[ 3 ] );
 	const y0 = Math.max( origin[ 1 ], bounds[ 1 ] ), y1 = Math.min( origin[ 1 ] + size - 1, bounds[ 4 ] );
@@ -878,7 +937,16 @@ function fillCube( dense, origin, size, value ) {
 		for ( let y = y0; y <= y1; y ++ ) {
 
 			const row = ( ( z - bounds[ 2 ] ) * height + ( y - bounds[ 1 ] ) ) * width - bounds[ 0 ];
-			data.fill( value, row + x0, row + x1 + 1 );
+
+			if ( stride === 1 ) {
+
+				data.fill( value[ 0 ], row + x0, row + x1 + 1 );
+
+			} else {
+
+				for ( let x = x0; x <= x1; x ++ ) data.set( value, ( row + x ) * stride );
+
+			}
 
 		}
 
@@ -890,7 +958,8 @@ function fillNode( dense, node ) {
 
 	if ( node.children === undefined ) {
 
-		const { data, bounds, width, height } = dense;
+		const { data, bounds, width, height, stride } = dense;
+		const components = stride === 1 ? 1 : 3;
 
 		for ( let i = 0; i < 512; i ++ ) {
 
@@ -900,7 +969,9 @@ function fillNode( dense, node ) {
 
 			if ( x < 0 || y < 0 || z < 0 || x >= width || y >= height || z > bounds[ 5 ] - bounds[ 2 ] ) continue;
 
-			data[ ( z * height + y ) * width + x ] = node.values[ i ];
+			const index = ( ( z * height + y ) * width + x ) * stride;
+
+			for ( let c = 0; c < components; c ++ ) data[ index + c ] = node.values[ i * components + c ];
 
 		}
 
@@ -920,7 +991,9 @@ function fillNode( dense, node ) {
 
 		} else {
 
-			fillCube( dense, offsetToCoord( i, node.log2Dim, node.childTotal, node.origin ), 1 << node.childTotal, node.values[ i ] );
+			const components = dense.stride === 1 ? 1 : 3;
+
+			fillCube( dense, offsetToCoord( i, node.log2Dim, node.childTotal, node.origin ), 1 << node.childTotal, node.values.subarray( i * components, ( i + 1 ) * components ) );
 
 		}
 
@@ -933,12 +1006,12 @@ function fillNode( dense, node ) {
  *
  * @typedef {Object} VDBLoader~Grid
  * @property {string} name - The name of the grid.
- * @property {('float'|'double'|'half')} type - The value type of the grid.
+ * @property {('float'|'double'|'half'|'vec3s'|'vec3d')} type - The value type of the grid.
  * @property {Object} metadata - The grid metadata, e.g. `class`.
  * @property {Matrix4} transform - Transforms index space coordinates into world space.
- * @property {number} background - The background value of the grid.
+ * @property {(number|Array<number>)} background - The background value of the grid.
  * @property {Box3} bbox - The bounding box of the active voxels in index space (inclusive).
- * @property {?Data3DTexture} texture - The voxel values inside `bbox`, or `null` if the grid is empty.
+ * @property {?Data3DTexture} texture - The voxel values inside `bbox`, or `null` if the grid is empty. Vector grids use `RGBAFormat`.
  **/
 
 export { VDBLoader };
