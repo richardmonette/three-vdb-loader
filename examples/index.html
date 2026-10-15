@@ -213,7 +213,7 @@
 
 					vec3 blackbody( float t ) {
 
-						float k = mix( 8.0, 65.0, clamp( t, 0.0, 1.0 ) );
+						float k = mix( 10.0, 40.0, clamp( t, 0.0, 1.0 ) );
 
 						return clamp( vec3(
 							1.0,
@@ -259,7 +259,7 @@
 							float d = density( value ) * opacity;
 
 							ac.rgb += ( 1.0 - ac.a ) * d * shade( value );
-							ac.a += ( 1.0 - ac.a ) * d;
+							ac.a += ( 1.0 - ac.a ) * d * ( mode == 1 ? 0.5 : 1.0 );
 
 							if ( ac.a >= 0.95 ) break;
 
@@ -291,7 +291,8 @@
 					vertexShader,
 					fragmentShader,
 					side: THREE.BackSide,
-					transparent: true
+					transparent: true,
+					premultipliedAlpha: true
 				} );
 
 			}
