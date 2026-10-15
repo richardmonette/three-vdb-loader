@@ -1,0 +1,44 @@
+{
+  "name": "three-vdb-loader",
+  "version": "0.1.0",
+  "description": "OpenVDB loader for three.js",
+  "type": "module",
+  "main": "VDBLoader.js",
+  "module": "VDBLoader.js",
+  "exports": {
+    ".": "./VDBLoader.js"
+  },
+  "files": [
+    "VDBLoader.js"
+  ],
+  "scripts": {
+    "test": "node --test"
+  },
+  "keywords": [
+    "three",
+    "three.js",
+    "openvdb",
+    "vdb",
+    "volume",
+    "loader"
+  ],
+  "author": "Richard Monette",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/richardmonette/three-vdb-loader.git"
+  },
+  "bugs": {
+    "url": "https://github.com/richardmonette/three-vdb-loader/issues"
+  },
+  "homepage": "https://github.com/richardmonette/three-vdb-loader#readme",
+  "peerDependencies": {
+    "three": ">=0.150.0"
+  },
+  "dependencies": {
+    "fflate": "^0.8.3"
+  },
+  "devDependencies": {
+    "three": "^0.186.1"
+  }
+}
