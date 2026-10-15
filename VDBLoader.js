@@ -19,6 +19,12 @@ const COMPRESS_ZIP = 0x1;
 const COMPRESS_ACTIVE_MASK = 0x2;
 const COMPRESS_BLOSC = 0x4;
 
+const BLOSC_DOSHUFFLE = 0x1;
+const BLOSC_MEMCPYED = 0x2;
+const BLOSC_DOBITSHUFFLE = 0x4;
+const BLOSC_DONT_SPLIT = 0x10;
+const BLOSC_LZ4_FORMAT = 1;
+
 const NO_MASK_OR_INACTIVE_VALS = 0;
 const NO_MASK_AND_ONE_INACTIVE_VAL = 2;
 const MASK_AND_NO_INACTIVE_VALS = 3;
@@ -36,7 +42,7 @@ const MAX_DENSE_VOXELS = 1 << 28;
  *
  * Scalar grids (`float`, `double` and `half`) are converted into dense
  * {@link Data3DTexture} objects covering the active voxels of each grid.
- * Uncompressed and zip compressed files are supported.
+ * Uncompressed, zip and blosc compressed files are supported.
  *
  * ```js
  * const loader = new VDBLoader();
@@ -362,12 +368,6 @@ function readGrid( reader, name, valueType, saveFloatAsHalf ) {
 		saveFloatAsHalf
 	};
 
-	if ( grid.compression & COMPRESS_BLOSC ) {
-
-		throw new Error( 'THREE.VDBLoader: Blosc compression is not supported.' );
-
-	}
-
 	reader.skip( 4 ); // buffer count
 
 	grid.background = readValue( reader, valueType );
@@ -573,12 +573,22 @@ function readCompressedValues( reader, grid, count, valueMask ) {
 
 function readData( reader, grid, count ) {
 
+	if ( grid.saveFloatAsHalf && count === 0 ) return new Float32Array( 0 );
+
 	const valueType = grid.saveFloatAsHalf ? 'half' : grid.valueType;
 	const byteLength = count * VALUE_SIZES[ valueType ];
 
 	let bytes;
 
-	if ( grid.compression & COMPRESS_ZIP ) {
+	if ( grid.compression & COMPRESS_BLOSC ) {
+
+		const compressedLength = reader.int64();
+
+		bytes = compressedLength <= 0
+			? reader.bytes( - compressedLength )
+			: bloscDecompress( reader.bytes( compressedLength ) );
+
+	} else if ( grid.compression & COMPRESS_ZIP ) {
 
 		const zippedLength = reader.int64();
 
@@ -614,6 +624,147 @@ function readData( reader, grid, count ) {
 	}
 
 	return values;
+
+}
+
+function bloscDecompress( src ) {
+
+	const view = new DataView( src.buffer, src.byteOffset, src.byteLength );
+
+	const flags = src[ 2 ];
+	const typeSize = src[ 3 ];
+	const size = view.getUint32( 4, true );
+	const blockSize = view.getUint32( 8, true );
+
+	const out = new Uint8Array( size );
+
+	if ( flags & BLOSC_MEMCPYED ) {
+
+		out.set( src.subarray( 16, 16 + size ) );
+		return out;
+
+	}
+
+	if ( ( flags >> 5 ) !== BLOSC_LZ4_FORMAT || ( flags & BLOSC_DOBITSHUFFLE ) ) {
+
+		throw new Error( 'THREE.VDBLoader: Unsupported Blosc codec.' );
+
+	}
+
+	const shuffle = ( flags & BLOSC_DOSHUFFLE ) !== 0 && typeSize > 1;
+	const split = ( flags & BLOSC_DONT_SPLIT ) === 0;
+	const blockCount = Math.ceil( size / blockSize );
+	const tmp = new Uint8Array( blockSize );
+
+	for ( let i = 0; i < blockCount; i ++ ) {
+
+		const start = i * blockSize;
+		const length = Math.min( blockSize, size - start );
+		const leftover = length < blockSize;
+		const splits = ( split && typeSize <= 16 && Math.floor( length / typeSize ) >= 128 && ! leftover ) ? typeSize : 1;
+		const splitLength = Math.floor( length / splits );
+		const target = shuffle ? tmp : out.subarray( start, start + length );
+
+		let offset = view.getInt32( 16 + i * 4, true );
+
+		for ( let j = 0; j < splits; j ++ ) {
+
+			const compressedLength = view.getInt32( offset, true );
+			const chunk = src.subarray( offset + 4, offset + 4 + compressedLength );
+			const dst = target.subarray( j * splitLength, ( j + 1 ) * splitLength );
+
+			if ( compressedLength === splitLength ) {
+
+				dst.set( chunk );
+
+			} else if ( lz4Decompress( chunk, dst ) !== splitLength ) {
+
+				throw new Error( 'THREE.VDBLoader: Invalid Blosc data.' );
+
+			}
+
+			offset += 4 + compressedLength;
+
+		}
+
+		if ( shuffle ) {
+
+			const count = Math.floor( length / typeSize );
+
+			for ( let e = 0; e < count; e ++ ) {
+
+				for ( let b = 0; b < typeSize; b ++ ) {
+
+					out[ start + e * typeSize + b ] = tmp[ b * count + e ];
+
+				}
+
+			}
+
+			const rest = length - count * typeSize;
+			out.set( tmp.subarray( length - rest, length ), start + length - rest );
+
+		}
+
+	}
+
+	return out;
+
+}
+
+function lz4Decompress( src, dst ) {
+
+	let s = 0;
+	let d = 0;
+
+	while ( s < src.length ) {
+
+		const token = src[ s ++ ];
+
+		let literals = token >> 4;
+
+		if ( literals === 15 ) {
+
+			let b;
+			do {
+
+				b = src[ s ++ ];
+				literals += b;
+
+			} while ( b === 255 );
+
+		}
+
+		dst.set( src.subarray( s, s + literals ), d );
+		s += literals;
+		d += literals;
+
+		if ( s >= src.length ) break;
+
+		const distance = src[ s ] | ( src[ s + 1 ] << 8 );
+		s += 2;
+
+		let match = token & 15;
+
+		if ( match === 15 ) {
+
+			let b;
+			do {
+
+				b = src[ s ++ ];
+				match += b;
+
+			} while ( b === 255 );
+
+		}
+
+		match += 4;
+
+		for ( let m = d - distance, end = d + match; d < end; ) dst[ d ++ ] = dst[ m ++ ];
+
+	}
+
+	return d;
 
 }
 

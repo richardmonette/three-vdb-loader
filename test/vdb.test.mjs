@@ -18,13 +18,6 @@ for ( const file of readdirSync( fixtures ).filter( f => f.endsWith( '.vdb' ) ).
 
 	test( file, ( t ) => {
 
-		if ( file.includes( 'blosc' ) ) {
-
-			assert.throws( () => load( file ), /Blosc compression is not supported/ );
-			return;
-
-		}
-
 		const warn = t.mock.method( console, 'warn', () => {} );
 		const grids = load( file );
 

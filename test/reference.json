@@ -1,4 +1,39 @@
 {
+	"double_blosc_mask.vdb": [
+		{
+			"name": "double",
+			"background": 0,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-20,
+				0,
+				-6
+			],
+			"max": [
+				19,
+				9,
+				6
+			],
+			"sha256": "745b94d7e568bbc858fbce67f100af905432fe8f5eba8ade47ffd3c8e5c0d803"
+		}
+	],
 	"double_zip_mask.vdb": [
 		{
 			"name": "double",
@@ -164,6 +199,41 @@
 			"sha256": "538714a5f3805e64de6b17222cccefdef5c7387d216b700ab1a7c1cfd19749a0"
 		}
 	],
+	"fog_savehalf_blosc.vdb": [
+		{
+			"name": "density",
+			"background": 0,
+			"matrix": [
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-6,
+				-13,
+				-8
+			],
+			"max": [
+				12,
+				5,
+				10
+			],
+			"sha256": "030d96e41790ae3c1ca94fdddf62cbc0a930b53c6e110ec7de0014d1ff329e5d"
+		}
+	],
 	"fog_savehalf_zip.vdb": [
 		{
 			"name": "density",
@@ -234,6 +304,41 @@
 			"sha256": "b941498352c3dd2c9e80c3e054ab4c91e599de6af670185a0a6019b3d0592ea5"
 		}
 	],
+	"half_blosc_mask.vdb": [
+		{
+			"name": "half",
+			"background": 0,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-20,
+				0,
+				-4
+			],
+			"max": [
+				19,
+				9,
+				4
+			],
+			"sha256": "fbb27b30e58d24b0ff8a009d78def424db585d07f94f7626ff8a77f12eeffc4a"
+		}
+	],
 	"half_zip_mask.vdb": [
 		{
 			"name": "half",
@@ -269,9 +374,79 @@
 			"sha256": "fbb27b30e58d24b0ff8a009d78def424db585d07f94f7626ff8a77f12eeffc4a"
 		}
 	],
+	"levelset_blosc_mask.vdb": [
+		{
+			"name": "surface",
+			"background": 0.75,
+			"matrix": [
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-14,
+				-14,
+				-14
+			],
+			"max": [
+				14,
+				14,
+				14
+			],
+			"sha256": "5610facaa89641efffb075dbde0fc8111e4fe497460883348f2af9c6afa06ebf"
+		}
+	],
 	"levelset_none_mask.vdb": [
 		{
 			"name": "surface",
+			"background": 0.75,
+			"matrix": [
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				0.25,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-14,
+				-14,
+				-14
+			],
+			"max": [
+				14,
+				14,
+				14
+			],
+			"sha256": "5610facaa89641efffb075dbde0fc8111e4fe497460883348f2af9c6afa06ebf"
+		}
+	],
+	"levelset_unknown_blosc_mask.vdb": [
+		{
+			"name": "surface_zip",
 			"background": 0.75,
 			"matrix": [
 				0.25,
@@ -372,6 +547,107 @@
 				14
 			],
 			"sha256": "5610facaa89641efffb075dbde0fc8111e4fe497460883348f2af9c6afa06ebf"
+		}
+	],
+	"multi_blosc_mask.vdb": [
+		{
+			"name": "density",
+			"background": 0,
+			"matrix": [
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				0.5,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-6,
+				-13,
+				-8
+			],
+			"max": [
+				12,
+				5,
+				10
+			],
+			"sha256": "b941498352c3dd2c9e80c3e054ab4c91e599de6af670185a0a6019b3d0592ea5"
+		},
+		{
+			"name": "scaled",
+			"background": 0,
+			"matrix": [
+				0.10000000149011612,
+				0,
+				0,
+				0,
+				0,
+				0.10000000149011612,
+				0,
+				0,
+				0,
+				0,
+				0.10000000149011612,
+				0,
+				10,
+				0,
+				-4,
+				1
+			],
+			"min": [
+				-9,
+				-9,
+				-9
+			],
+			"max": [
+				9,
+				9,
+				9
+			],
+			"sha256": "7d60fb83857a0e360d6eb544c825d644d00c6f4a069ff0212292336e2dafc371"
+		},
+		{
+			"name": "temperature",
+			"background": 0,
+			"matrix": [
+				0,
+				0.5,
+				0,
+				0,
+				-0.5,
+				0,
+				0,
+				0,
+				0,
+				0,
+				0.25,
+				0,
+				1,
+				2,
+				3,
+				1
+			],
+			"min": [
+				-5,
+				-5,
+				-5
+			],
+			"max": [
+				5,
+				5,
+				5
+			],
+			"sha256": "ad1e13b50373b5c2048baec950694aa2c1b39d3555bf7e275e7a76401d1542ce"
 		}
 	],
 	"multi_zip_mask.vdb": [
@@ -475,6 +751,146 @@
 			"sha256": "ad1e13b50373b5c2048baec950694aa2c1b39d3555bf7e275e7a76401d1542ce"
 		}
 	],
+	"random_blosc.vdb": [
+		{
+			"name": "random",
+			"background": 0.25,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-40,
+				-40,
+				-40
+			],
+			"max": [
+				238,
+				40,
+				40
+			],
+			"sha256": "8c131022725176a71020f46e3f955a3042b6074f72aa73633839c2fb136c7bbd"
+		}
+	],
+	"random_blosc_mask.vdb": [
+		{
+			"name": "random",
+			"background": 0.25,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-40,
+				-40,
+				-40
+			],
+			"max": [
+				238,
+				40,
+				40
+			],
+			"sha256": "8c131022725176a71020f46e3f955a3042b6074f72aa73633839c2fb136c7bbd"
+		}
+	],
+	"random_savehalf_blosc_mask.vdb": [
+		{
+			"name": "random_half",
+			"background": 0.25,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-40,
+				-40,
+				-40
+			],
+			"max": [
+				238,
+				40,
+				40
+			],
+			"sha256": "69dabe039c1ba15ea09dc2a1ab35713bd6322d4dee3aa118077ca067b23906ba"
+		}
+	],
+	"random_savehalf_zip_mask.vdb": [
+		{
+			"name": "random_half",
+			"background": 0.25,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-40,
+				-40,
+				-40
+			],
+			"max": [
+				238,
+				40,
+				40
+			],
+			"sha256": "69dabe039c1ba15ea09dc2a1ab35713bd6322d4dee3aa118077ca067b23906ba"
+		}
+	],
 	"random_zip.vdb": [
 		{
 			"name": "random",
@@ -543,6 +959,41 @@
 				40
 			],
 			"sha256": "8c131022725176a71020f46e3f955a3042b6074f72aa73633839c2fb136c7bbd"
+		}
+	],
+	"tiles_blosc_mask.vdb": [
+		{
+			"name": "tiles",
+			"background": 0,
+			"matrix": [
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1,
+				0,
+				0,
+				0,
+				0,
+				1
+			],
+			"min": [
+				-64,
+				0,
+				0
+			],
+			"max": [
+				255,
+				200,
+				127
+			],
+			"sha256": "9fe2fbd288440c03cc8d3758602a119a39ede19010e8299e8dd473e645f14dae"
 		}
 	],
 	"tiles_zip_mask.vdb": [
