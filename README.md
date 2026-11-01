@@ -19,7 +19,7 @@ npm install three-vdb-loader
 	"imports": {
 		"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
 		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
-		"three-vdb-loader": "https://cdn.jsdelivr.net/npm/three-vdb-loader@0.3.0/VDBLoader.js"
+		"three-vdb-loader": "https://cdn.jsdelivr.net/npm/three-vdb-loader@0.4.0/VDBLoader.js"
 	}
 }
 </script>
