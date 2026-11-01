@@ -2,6 +2,13 @@
 
 ## Unreleased
 
+Breaking changes:
+
+- Textures are `HalfFloatType` by default; they were `FloatType`. `texture.image.data` is now a `Uint16Array` of half floats instead of a `Float32Array`. Call `setTextureType( FloatType )` to keep the old behaviour.
+- `fflate` is no longer a dependency. Remove it from import maps that listed it only for this loader.
+
+New:
+
 - `VDBSequenceLoader` (`three-vdb-loader/sequence`): animated sequences of OpenVDB or NanoVDB files, fetched ahead and decoded in web workers, played back through textures updated in place
 - `tools/manifest.mjs` writes sequence manifests
 - Demo: a 240 frame oil fire simulation
@@ -9,7 +16,7 @@
 - `setTextureType()`: `HalfFloatType` (new default), `FloatType` or `UnsignedByteType`
 - `setBoundingBox()` to force the texture size, for example across the frames of a sequence
 - `setValueRange()` and `grid.valueRange`
-- No dependencies: zlib, Blosc and LZ4 decoding is built in
+- No dependencies: zlib (replacing `fflate`), Blosc and LZ4 decoding is built in
 - The parser (`VDBParser.js`) no longer depends on three.js
 
 ## 0.3.0
