@@ -88,6 +88,7 @@
 
 			let mesh = null;
 			let sequence = null;
+			let shownFrame = - 1, shownLoaded = - 1;
 			let generation = 0;
 
 			const gui = new GUI();
@@ -218,6 +219,7 @@
 
 					sequence.dispose();
 					sequence = null;
+					shownFrame = shownLoaded = - 1;
 
 				}
 
@@ -438,8 +440,10 @@
 					timer.update();
 					sequence.update( timer.getDelta() );
 
-					if ( parameters.frame !== sequence.frame ) {
+					if ( shownFrame !== sequence.frame || shownLoaded !== sequence.loaded ) {
 
+						shownFrame = sequence.frame;
+						shownLoaded = sequence.loaded;
 						parameters.frame = sequence.frame;
 						frameController.updateDisplay();
 						updateInfo();
