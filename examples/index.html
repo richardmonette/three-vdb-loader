@@ -58,12 +58,12 @@
 			const models = {
 				'oil fire, 192 frames, fp8 (31 MB)': { url: 'models/sequences/fire_fp8/fire_fp8.json', ...fire },
 				'oil fire, 192 frames, fp4 (16 MB)': { url: 'models/sequences/fire_fp4/fire_fp4.json', ...fire },
-				'oil fire column, one frame': { url: 'models/oil_fire_column_15s.vdb', grid: 'density', threshold: 0.4, range: 0.4, opacity: 0.1 },
-				'torus knot': { url: 'models/torusknot.vdb', grid: 'density', threshold: 0.3, range: 0.2, opacity: 0.05 },
-				'smoke (openvdb.org)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
-				'smoke2 (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
-				'smoke2 velocity (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'v', view: 'direction', scale: 0.05, threshold: 0.15, range: 0.1, opacity: 0.04 },
-				'fire (openvdb.org)': { url: openvdb + 'fire.vdb', grids: [ 'density', 'temperature' ], view: 'fire', kelvin: 33, extinction: 60 }
+				'oil fire column, one frame (1.4 MB)': { url: 'models/oil_fire_column_15s.vdb', grid: 'density', threshold: 0.4, range: 0.4, opacity: 0.1 },
+				'torus knot (0.8 MB)': { url: 'models/torusknot.vdb', grid: 'density', threshold: 0.3, range: 0.2, opacity: 0.05 },
+				'smoke (openvdb.org, 2.6 MB)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
+				'smoke2 (openvdb.org, 30 MB)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
+				'smoke2 velocity (openvdb.org, 30 MB)': { url: openvdb + 'smoke2.vdb', grid: 'v', view: 'direction', scale: 0.05, threshold: 0.15, range: 0.1, opacity: 0.04 },
+				'fire (openvdb.org, 28 MB)': { url: openvdb + 'fire.vdb', grids: [ 'density', 'temperature' ], view: 'fire', kelvin: 33, extinction: 60 }
 			};
 
 			const views = {
