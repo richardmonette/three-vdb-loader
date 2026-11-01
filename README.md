@@ -4,7 +4,7 @@
 
 <a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="192 frame fire simulation streamed and played back at 24 fps"></a>
 
-Above, 192 frames of NanoVDB, 30 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
+Above, 192 frames of NanoVDB, 31 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
 
 <img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
 
@@ -139,7 +139,7 @@ function animate() {
 and measures the range if needed) but they let every frame share one texture size and one
 normalization. `node tools/manifest.mjs <directory> --fps 30` writes a manifest for a
 directory of frames. Convert simulation frames with `nanovdb_convert --fp8 -z`: the
-demo's 192 frame fire is 30 MB at 8 bits per voxel, 16 MB at 4.
+demo's 192 frame fire is 31 MB at 8 bits per voxel, 16 MB at 4.
 
 ## Options
 

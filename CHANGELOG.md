@@ -3,7 +3,7 @@
 ## 0.4.1
 
 - `VDBSequenceLoader` starts its decode workers when the module is imported cross-origin, for example from a CDN
-- The demo sequence is 192 frames at 24 fps, 30 MB
+- The demo sequence is 192 frames at 24 fps, 31 MB
 
 ## 0.4.0
 
