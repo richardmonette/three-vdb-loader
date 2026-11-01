@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.4.2
 
 - Scrubbing: `VDBSequence` decodes the frame nearest to the wanted one first, skips frames that left the window, and keeps frames either side of the current one while paused
 
