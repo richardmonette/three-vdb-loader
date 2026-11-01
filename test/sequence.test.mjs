@@ -188,3 +188,36 @@ test( 'OpenVDB frames and errors', async () => {
 	await assert.rejects( new VDBSequenceLoader().loadAsync( 'http://test/frames/missing.json' ), /404/ );
 
 } );
+
+test( 'frames either side of the wanted one are decoded while paused', async () => {
+
+	const sequence = await new VDBSequenceLoader().setGridNames( [ 'density' ] ).setTextureType( FloatType ).setWorkerLimit( 0 )
+		.loadAsync( { fps: 10, frames: [ 'http://test/frames/a.nvdb', 'http://test/frames/b.nvdb', 'http://test/frames/c.nvdb' ] } );
+
+	await until( () => sequence.loaded === 3 );
+
+	// Paused at frame 1: both neighbours count as one frame away, and the far side wraps when looping.
+	sequence.frame = 1;
+	await until( () => sequence.frame === 1 );
+	assert.equal( sequence.distance( 0 ), 1 );
+	assert.equal( sequence.distance( 2 ), 1 );
+	await until( () => sequence.ready === 3 );
+
+	sequence.frame = 0;
+	await until( () => sequence.frame === 0 );
+	assert.equal( sequence.distance( 2 ), 1, 'wraps while looping' );
+	sequence.loop = false;
+	assert.equal( sequence.distance( 2 ), 2, 'no wrap without loop' );
+
+	// Playing: only the frames ahead are near.
+	sequence.loop = true;
+	sequence.play();
+	assert.equal( sequence.distance( 1 ), 1 );
+	assert.equal( sequence.distance( 2 ), 2 );
+	sequence.frame = 2;
+	await until( () => sequence.frame === 2 );
+	assert.equal( sequence.distance( 0 ), 1, 'the next frame after the last wraps to the first' );
+
+	sequence.dispose();
+
+} );

@@ -621,16 +621,16 @@ class VDBSequence {
 
 			const names = this.loader.gridNames || Object.keys( ranges );
 
-			return Promise.all( names.map( name => this.parse( buffer, Object.assign( {}, options, { gridNames: [ name ], valueRange: ranges[ name ] || null } ) ) ) )
+			return Promise.all( names.map( name => this.parse( buffer, Object.assign( {}, options, { gridNames: [ name ], valueRange: ranges[ name ] || null } ), index ) ) )
 				.then( results => results.flat() );
 
 		}
 
-		return this.parse( buffer, options );
+		return this.parse( buffer, options, index );
 
 	}
 
-	parse( buffer, options ) {
+	parse( buffer, options, index = - 1 ) {
 
 		const useWorkers = this.loader.workerLimit > 0 && typeof Worker !== 'undefined';
 
@@ -656,7 +656,7 @@ class VDBSequence {
 
 		return new Promise( ( resolve, reject ) => {
 
-			this.queue.push( { buffer, options, resolve, reject } );
+			this.queue.push( { buffer, options, index, resolve, reject } );
 			this.pump();
 
 		} );
@@ -677,8 +677,29 @@ class VDBSequence {
 
 			}
 
+			// Scrubbing can queue more frames than the workers keep up with: serve the
+			// frame nearest to the wanted one and skip those that fell out of the window.
+			const lookahead = Math.max( 0, this.loader.lookahead );
+			let best = 0;
+
+			for ( let i = 1; i < this.queue.length; i ++ ) {
+
+				if ( this.distance( this.queue[ i ].index ) < this.distance( this.queue[ best ].index ) ) best = i;
+
+			}
+
+			const task = this.queue.splice( best, 1 )[ 0 ];
+
+			if ( task.index !== - 1 && task.index !== this.wanted && this.distance( task.index ) > lookahead ) {
+
+				const error = new Error( 'THREE.VDBSequenceLoader: Frame ' + task.index + ' left the decode window.' );
+				error.name = 'AbortError';
+				task.reject( error );
+				continue;
+
+			}
+
 			const worker = this.idle.pop();
-			const task = this.queue.shift();
 			const id = this.nextId ++;
 
 			worker.tasks.set( id, task );
@@ -745,14 +766,24 @@ class VDBSequence {
 
 		const lookahead = Math.max( 0, this.loader.lookahead );
 
-		for ( let step = 0; step <= lookahead; step ++ ) {
+		// Playing: the frames ahead. Paused: the frames either side, nearest first, for scrubbing.
+		const steps = [ 0 ];
+
+		for ( let step = 1; step <= lookahead; step ++ ) {
+
+			if ( this.playing ) steps.push( step );
+			else if ( step <= Math.ceil( lookahead / 2 ) ) steps.push( step, - step );
+
+		}
+
+		for ( const step of steps ) {
 
 			let index = this.wanted + step;
 
-			if ( index >= this.frameCount ) {
+			if ( index >= this.frameCount || index < 0 ) {
 
-				if ( this.loop === false ) break;
-				index %= this.frameCount;
+				if ( this.loop === false ) continue;
+				index = ( index + this.frameCount ) % this.frameCount;
 
 			}
 
@@ -776,7 +807,7 @@ class VDBSequence {
 			} ).catch( error => {
 
 				this.pending.delete( index );
-				console.error( error );
+				if ( error.name !== 'AbortError' ) console.error( error );
 
 			} );
 
@@ -800,10 +831,7 @@ class VDBSequence {
 
 				if ( index === this.current || index === this.wanted ) continue;
 
-				// Distance in playback direction, wrapping when looping.
-
-				let distance = index - this.wanted;
-				if ( distance < 0 ) distance = this.loop ? distance + this.frameCount : this.frameCount - distance;
+				const distance = this.distance( index );
 
 				if ( distance > worstDistance ) {
 
@@ -819,6 +847,29 @@ class VDBSequence {
 			this.cache.delete( worst );
 
 		}
+
+	}
+
+	/**
+	 * How far a frame is from the wanted one: ahead in playback order while playing,
+	 * either way round while paused, wrapping when looping.
+	 *
+	 * @param {number} index - The frame index.
+	 * @return {number} The distance in frames.
+	 */
+	distance( index ) {
+
+		let distance = index - this.wanted;
+
+		if ( this.playing ) {
+
+			if ( distance < 0 ) distance = this.loop ? distance + this.frameCount : this.frameCount - distance;
+			return distance;
+
+		}
+
+		distance = Math.abs( distance );
+		return this.loop ? Math.min( distance, this.frameCount - distance ) : distance;
 
 	}
 

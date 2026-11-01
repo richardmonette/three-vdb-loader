@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Scrubbing: `VDBSequence` decodes the frame nearest to the wanted one first, skips frames that left the window, and keeps frames either side of the current one while paused
+
 ## 0.4.1
 
 - `VDBSequenceLoader` starts its decode workers when the module is imported cross-origin, for example from a CDN
