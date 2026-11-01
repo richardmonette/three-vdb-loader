@@ -66,7 +66,7 @@
 
 			const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2, fire: 3 };
 
-			const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, playing: true, frame: 0, loop: true };
+			const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, rotate: true, playing: true, frame: 0, loop: true };
 
 			const info = document.getElementById( 'info' );
 
@@ -98,6 +98,7 @@
 			gui.add( parameters, 'range', 0, 1, 0.01 ).onChange( update );
 			gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update );
 			gui.add( parameters, 'steps', 0, 400, 1 ).onChange( update );
+			gui.add( parameters, 'rotate' ).onChange( v => controls.autoRotate = v );
 
 			const playback = gui.addFolder( 'sequence' );
 			playback.add( parameters, 'playing' ).onChange( v => sequence && ( v ? sequence.play() : sequence.pause() ) );
