@@ -19,7 +19,6 @@ npm install three-vdb-loader
 	"imports": {
 		"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
 		"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/",
-		"fflate": "https://cdn.jsdelivr.net/npm/fflate@0.8.3/esm/browser.js",
 		"three-vdb-loader": "https://cdn.jsdelivr.net/npm/three-vdb-loader@0.3.0/VDBLoader.js"
 	}
 }
@@ -97,3 +96,24 @@ renderer.setAnimationLoop( () => {
 </body>
 </html>
 ```
+
+## Options
+
+```js
+const loader = new VDBLoader()
+	.setGridNames( [ 'density' ] )              // grids to load, default: all
+	.setTextureType( THREE.HalfFloatType )       // HalfFloatType (default), FloatType or UnsignedByteType
+	.setBoundingBox( box3 )                      // index space box the textures cover, default: the active voxels
+	.setValueRange( new THREE.Vector2( 0, 1 ) ); // range for UnsignedByteType normalization, default: measured
+```
+
+Each grid has `name`, `type`, `metadata`, `transform` (index to world space `Matrix4`),
+`background`, `bbox` (the index space `Box3` the texture covers, inclusive), `valueRange`
+(a `Vector2` with the minimum and maximum voxel value) and `texture` (a `Data3DTexture`,
+or `null` for an empty grid). `UnsignedByteType` textures store values normalized to
+`valueRange`; the other types store the values as they are.
+
+Half float textures can be filtered on every WebGL 2 and WebGPU device, including iOS,
+and use half the memory of float textures. Set `FloatType` to keep the exact values.
+Set a bounding box when loading several files that should share one texture size,
+for example the frames of a simulation.

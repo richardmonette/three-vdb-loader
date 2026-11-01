@@ -9,7 +9,9 @@
     ".": "./VDBLoader.js"
   },
   "files": [
-    "VDBLoader.js"
+    "VDBLoader.js",
+    "VDBParser.js",
+    "VDBCodecs.js"
   ],
   "scripts": {
     "test": "node --test"
@@ -34,9 +36,6 @@
   "homepage": "https://github.com/richardmonette/three-vdb-loader#readme",
   "peerDependencies": {
     "three": ">=0.150.0"
-  },
-  "dependencies": {
-    "fflate": "^0.8.3"
   },
   "devDependencies": {
     "three": "^0.186.1"

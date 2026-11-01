@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
+import { FloatType } from 'three';
 import { VDBLoader } from '../VDBLoader.js';
 
 const fixtures = new URL( './fixtures/', import.meta.url );
@@ -10,7 +11,7 @@ const reference = JSON.parse( readFileSync( new URL( './reference.json', import.
 function load( file, names = null ) {
 
 	const buffer = readFileSync( new URL( file, fixtures ) );
-	return new VDBLoader().setGridNames( names ).parse( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
+	return new VDBLoader().setGridNames( names ).setTextureType( FloatType ).parse( buffer.buffer.slice( buffer.byteOffset, buffer.byteOffset + buffer.byteLength ) );
 
 }
 
