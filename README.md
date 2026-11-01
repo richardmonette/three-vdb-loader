@@ -1,6 +1,6 @@
 # three-vdb-loader
 
-OpenVDB and NanoVDB loader for three.js, [live demo](https://richardmonette.github.io/three-vdb-loader/examples/).
+[OpenVDB](https://www.openvdb.org/) and [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) loader for three.js, [live demo](https://richardmonette.github.io/three-vdb-loader/examples/). OpenVDB is the industry standard for sparse volumes; NanoVDB is its compact read-only form, the one suited to the web.
 
 <a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="240 frame fire simulation streamed and played back at 30 fps"></a>
 
