@@ -42,10 +42,18 @@
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 			import { VDBLoader } from '../VDBLoader.js';
 			import { VDBSequenceLoader } from '../VDBSequenceLoader.js';
+			import { blackbodyTable } from './blackbody.js';
+
+			// Blackbody radiance from 300 K to 3000 K for the fire view, sampled by temperature.
+			const blackbodyMap = new THREE.DataTexture( blackbodyTable( 300, 3000, 1024 ), 1024, 1, THREE.RGBAFormat, THREE.FloatType );
+			blackbodyMap.minFilter = blackbodyMap.magFilter = THREE.NearestFilter;
+			blackbodyMap.needsUpdate = true;
 
 			const openvdb = 'https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/';
 
-			const fire = { sequence: true, grids: [ 'density', 'temperature' ], view: 'fire', scale: 1 / 1200, threshold: 0.3, range: 0.3, opacity: 0.12 };
+			// Rendering as in the simulator's oil_fire_column profile: soot extinction 20 per domain length (96 cells), albedo 0.25,
+			// sun (12, 11, 9) from the right, ambient (0.4, 0.42, 0.46), emission 0.3, AgX with saturation 1.8.
+			const fire = { sequence: true, grids: [ 'density', 'temperature' ], view: 'fire', extinction: 20, cells: 96, albedo: 0.25, emission: 0.3, light: [ 0.8, 0.5, - 0.3 ], lightColor: [ 12, 11, 9 ], ambient: [ 0.4, 0.42, 0.46 ], saturation: 1.8 };
 
 			const models = {
 				'oil fire, 240 frames, fp8 (38 MB)': { url: 'models/sequences/fire_fp8/fire_fp8.json', ...fire },
@@ -66,7 +74,7 @@
 
 			const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2, fire: 3 };
 
-			const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, exposure: 1, rotate: true, playing: true, frame: 0, loop: true };
+			const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, extinction: 20, albedo: 0.25, emission: 0.3, exposure: 1, saturation: 1.8, rotate: true, playing: true, frame: 0, loop: true };
 
 			const info = document.getElementById( 'info' );
 
@@ -94,11 +102,20 @@
 			const gui = new GUI();
 			gui.add( parameters, 'model', Object.keys( models ) ).onChange( load );
 			let viewController = gui.add( parameters, 'view', views.scalar ).onChange( update );
-			gui.add( parameters, 'threshold', 0, 1, 0.01 ).onChange( update );
-			gui.add( parameters, 'range', 0, 1, 0.01 ).onChange( update );
-			gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update );
+			// Density ramp for the plain views; the fire view has physical controls instead.
+			const rampControls = [
+				gui.add( parameters, 'threshold', 0, 1, 0.01 ).onChange( update ),
+				gui.add( parameters, 'range', 0, 1, 0.01 ).onChange( update ),
+				gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update )
+			];
+			const fireControls = [
+				gui.add( parameters, 'extinction', 0, 60, 0.5 ).onChange( update ),
+				gui.add( parameters, 'albedo', 0, 1, 0.01 ).onChange( update ),
+				gui.add( parameters, 'emission', 0, 2, 0.01 ).onChange( update ),
+				gui.add( parameters, 'exposure', 0, 4, 0.01 ).onChange( update ),
+				gui.add( parameters, 'saturation', 0, 3, 0.01 ).onChange( update )
+			];
 			gui.add( parameters, 'steps', 0, 400, 1 ).onChange( update );
-			gui.add( parameters, 'exposure', 0, 4, 0.01 ).onChange( update );
 			gui.add( parameters, 'rotate' ).onChange( v => controls.autoRotate = v );
 
 			const playback = gui.addFolder( 'sequence' );
@@ -181,9 +198,13 @@
 				const type = model.sequence ? 'fire' : grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
 
 				parameters.view = model.view ?? views[ type ][ 0 ];
-				parameters.threshold = model.threshold;
-				parameters.range = model.range;
-				parameters.opacity = model.opacity;
+				parameters.threshold = model.threshold ?? 0;
+				parameters.range = model.range ?? 0;
+				parameters.opacity = model.opacity ?? 0;
+				parameters.extinction = model.extinction ?? 20;
+				parameters.albedo = model.albedo ?? 0.25;
+				parameters.emission = model.emission ?? 0.3;
+				parameters.saturation = model.saturation ?? 1.8;
 				viewController = viewController.options( views[ type ] ).onChange( update );
 
 				if ( sequence !== null ) {
@@ -237,6 +258,15 @@
 				mesh.material.uniforms.opacity.value = parameters.opacity;
 				mesh.material.uniforms.steps.value = parameters.steps;
 				mesh.material.uniforms.exposure.value = parameters.exposure;
+				mesh.material.uniforms.extinction.value = parameters.extinction * mesh.material.userData.cellScale;
+				mesh.material.uniforms.albedo.value = parameters.albedo;
+				mesh.material.uniforms.emission.value = parameters.emission;
+				mesh.material.uniforms.saturation.value = parameters.saturation;
+
+				const fire = parameters.view === 'fire';
+				for ( const c of rampControls ) fire ? c.hide() : c.show();
+				for ( const c of fireControls ) fire ? c.show() : c.hide();
+				gui.controllersRecursive().forEach( c => c.updateDisplay() );
 
 			}
 
@@ -324,10 +354,30 @@
 					uniform float steps;
 					uniform float exposure;
 
-					const vec3 lightDir = normalize( vec3( - 0.45, 0.8, 0.6 ) );
-					const vec3 keyLight = vec3( 1.0, 0.96, 0.9 ) * 2.0;
-					const vec3 ambientLight = vec3( 0.35, 0.4, 0.5 ) * 0.6;
-					const vec3 sootAlbedo = vec3( 0.12, 0.11, 0.1 );
+					// Fire view: the simulator's emission-absorption model.
+					uniform sampler2D blackbodyMap;
+					uniform vec2 blackbodyRange;
+					uniform float extinction;      // soot extinction per unit of box length at ambient temperature
+					uniform float albedo;          // soot single scattering albedo
+					uniform float emission;        // exposure on the blackbody radiance
+					uniform vec3 lightDir;         // toward the sun
+					uniform vec3 lightColor;
+					uniform vec3 ambientLight;
+					uniform float saturation;
+
+					const float PI = 3.14159265;
+					const float AMBIENT_K = 293.15;   // the simulation stores temperature as degrees above 20 C
+					const float DRAPER_K = 798.0;     // below this nothing glows
+					const float HG_G = 0.1;
+
+					// Per pixel ray offset without visible structure (Dave Hoskins, hash without sine).
+					float hash( vec2 p ) {
+
+						vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
+						p3 += dot( p3, p3.yzx + 33.33 );
+						return fract( ( p3.x + p3.y ) * p3.z );
+
+					}
 
 					vec2 hitBox( vec3 orig, vec3 dir ) {
 
@@ -358,78 +408,155 @@
 
 					}
 
-					// Linear RGB of a blackbody at T kelvin, normalized to unit luminance (Krystek's Planckian locus fit, 1000-15000 K).
-					vec3 planck( float T ) {
+					vec3 shade( vec4 value ) {
 
-						T = clamp( T, 1000.0, 15000.0 );
-						float u = ( 0.860117757 + 1.54118254e-4 * T + 1.28641212e-7 * T * T ) / ( 1.0 + 8.42420235e-4 * T + 7.08145163e-7 * T * T );
-						float v = ( 0.317398726 + 4.22806245e-5 * T + 4.20481691e-8 * T * T ) / ( 1.0 - 2.89741816e-5 * T + 1.61456053e-7 * T * T );
-						float d = 2.0 * u - 8.0 * v + 4.0;
-						float x = 3.0 * u / d;
-						float y = 2.0 * v / d;
-						vec3 XYZ = vec3( x / y, 1.0, ( 1.0 - x - y ) / y );
-						return max( vec3(
-							3.2406 * XYZ.x - 1.5372 * XYZ.y - 0.4986 * XYZ.z,
-							- 0.9689 * XYZ.x + 1.8758 * XYZ.y + 0.0415 * XYZ.z,
-							0.0557 * XYZ.x - 0.2040 * XYZ.y + 1.0570 * XYZ.z
-						), 0.0 );
+						if ( mode == 1 ) return blackbody( value.r * scale ) * 2.0;
+						if ( mode == 2 ) return 0.5 + 0.5 * normalize( value.rgb + 1e-6 );
+
+						return base;
 
 					}
 
-					// Emitted radiance of soot at T kelvin, relative to 1500 K (Stefan-Boltzmann).
-					vec3 fireEmission( float T ) {
+					// ---- Fire view ----
 
-						float k = T / 1500.0;
-						return planck( T ) * k * k * k * k * smoothstep( 950.0, 1250.0, T ) * 3.5;
+					// Soot amount: the simulation's density.
+					float sootAt( vec3 p ) {
+
+						return texture( map, p + 0.5 ).r * remap.x + remap.y;
 
 					}
 
-					// Transmittance of the soot between p and the key light.
-					float shadow( vec3 p ) {
+					float kelvinAt( vec3 p ) {
 
-						const int shadowSteps = 6;
-						float shadowStep = 1.0 / 12.0;
-						float extinction = opacity * steps;
-						float sum = 0.0;
+						return texture( map2, p + 0.5 ).r * remap2.x + remap2.y + AMBIENT_K;
 
-						for ( int j = 1; j <= shadowSteps; j ++ ) {
+					}
 
-							vec3 q = p + lightDir * ( float( j ) * shadowStep );
+					// Linear sRGB radiance of a blackbody at T kelvin, from the CIE integral tabulated in blackbodyMap.
+					vec3 blackbodyRadiance( float T ) {
+
+						int n = textureSize( blackbodyMap, 0 ).x;
+						float x = clamp( ( T - blackbodyRange.x ) / ( blackbodyRange.y - blackbodyRange.x ), 0.0, 1.0 ) * float( n - 1 );
+						int i = int( x );
+						return mix( texelFetch( blackbodyMap, ivec2( i, 0 ), 0 ).rgb, texelFetch( blackbodyMap, ivec2( min( i + 1, n - 1 ), 0 ), 0 ).rgb, x - float( i ) );
+
+					}
+
+					// Fire is a pure absorber and emitter; only cooler soot scatters (Nguyen et al. 2002).
+					float fireAlbedo( float T ) {
+
+						return albedo * clamp( ( 1500.0 - T ) / 500.0, 0.0, 1.0 );
+
+					}
+
+					float hgPhase( float cosTheta ) {
+
+						float g2 = HG_G * HG_G;
+						float d = 1.0 + g2 - 2.0 * HG_G * cosTheta;
+						return ( 1.0 - g2 ) / ( 4.0 * PI * d * sqrt( d ) );
+
+					}
+
+					// Transmittance of the soot between p and the sun, with hot gas thinner by the ideal gas law.
+					float sunTransmittance( vec3 p ) {
+
+						const int lightSteps = 10;
+						const float lightStep = 1.0 / 16.0;
+						float tau = 0.0;
+
+						for ( int i = 1; i <= lightSteps; i ++ ) {
+
+							vec3 q = p + lightDir * ( float( i ) * lightStep );
 							if ( any( greaterThan( abs( q ), vec3( 0.5 ) ) ) ) break;
-							sum += density( ( texture( map, q + 0.5 ) * remap.x + remap.y ) / scale );
+
+							float d = sootAt( q );
+							if ( d < 1e-5 ) continue;
+
+							tau += d * extinction * ( AMBIENT_K / kelvinAt( q ) ) * lightStep;
+							if ( tau > 4.6 ) return 0.0;
 
 						}
 
-						return exp( - sum * extinction * shadowStep );
+						return exp( - tau );
 
 					}
 
-					vec3 aces( vec3 x ) {
+					// AgX display transform (Troy Sobotka; constants as in Blender 4 and three.js), with a chroma scale after the curve.
+					float agxContrast( float x ) {
 
-						return clamp( ( x * ( 2.51 * x + 0.03 ) ) / ( x * ( 2.43 * x + 0.59 ) + 0.14 ), 0.0, 1.0 );
+						float x2 = x * x, x4 = x2 * x2;
+						return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+
+					}
+
+					vec3 agx( vec3 c ) {
+
+						const mat3 inset = mat3(
+							0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+							0.0784335999999992, 0.878468636469772, 0.0784336,
+							0.0792237451477643, 0.0791661274605434, 0.879142973793104 );
+						const mat3 outset = mat3(
+							1.19687900512017, - 0.0528968517574562, - 0.0529716355144438,
+							- 0.0980208811401368, 1.15190312990417, - 0.0980434501171241,
+							- 0.0990297440797205, - 0.0989611768448433, 1.15107367264116 );
+						const float minEv = - 12.47393, maxEv = 4.026069;
+
+						vec3 v = inset * max( c, 0.0 );
+						v = ( clamp( log2( max( v, 1e-10 ) ), minEv, maxEv ) - minEv ) / ( maxEv - minEv );
+						v = vec3( agxContrast( v.x ), agxContrast( v.y ), agxContrast( v.z ) );
+						v = pow( max( outset * v, 0.0 ), vec3( 2.2 ) );
+
+						float l = dot( v, vec3( 0.2126, 0.7152, 0.0722 ) );
+						return max( l + saturation * ( v - l ), 0.0 );
 
 					}
 
 					vec3 toSRGB( vec3 c ) {
 
+						c = clamp( c, 0.0, 1.0 );
 						return mix( c * 12.92, 1.055 * pow( c, vec3( 1.0 / 2.4 ) ) - 0.055, step( 0.0031308, c ) );
 
 					}
 
-					vec3 shade( vec4 value, float temperature, vec3 p ) {
+					// Emission and single scattering through the soot, as the simulator's viewer renders it.
+					vec4 fire( vec3 origin, vec3 dir, vec2 bounds, float jitter ) {
 
-						if ( mode == 1 ) return blackbody( value.r * scale ) * 2.0;
-						if ( mode == 2 ) return 0.5 + 0.5 * normalize( value.rgb + 1e-6 );
+						float stepSize = ( bounds.y - bounds.x ) / steps;
+						vec3 p = origin + ( bounds.x + jitter * stepSize ) * dir;
+						float phase = hgPhase( dot( dir, lightDir ) );
 
-						if ( mode == 3 ) {
+						float transmittance = 1.0;
+						vec3 radiance = vec3( 0.0 );
 
-							// Soot: a dark albedo lit by the key light through the smoke, plus its own glow when hot.
-							vec3 smoke = sootAlbedo * ( ambientLight + keyLight * shadow( p ) );
-							return smoke + fireEmission( temperature / scale + 273.15 ) * exposure;
+						for ( float i = 0.0; i < steps; i += 1.0, p += dir * stepSize ) {
+
+							float d = sootAt( p );
+							float T = kelvinAt( p );
+
+							if ( d < 1e-5 && T < DRAPER_K ) continue;
+
+							// Hot gas expands, so the same soot mass extinguishes less.
+							float sigmaT = d * extinction * ( AMBIENT_K / T );
+							float dT = exp( - sigmaT * stepSize );
+							float a = fireAlbedo( T );
+
+							vec3 source = vec3( 0.0 );
+
+							// Thermal emission by Kirchhoff's law: what absorbs, radiates.
+							if ( T > DRAPER_K ) source += sigmaT * ( 1.0 - a ) * emission * blackbodyRadiance( T );
+
+							// In-scattered sun light through the smoke, plus unshadowed ambient.
+							if ( d > 1e-5 ) source += sigmaT * a * ( lightColor * sunTransmittance( p ) * phase + ambientLight );
+
+							float weight = sigmaT > 1e-4 ? transmittance * ( 1.0 - dT ) / sigmaT : transmittance * stepSize;
+							radiance += weight * source;
+
+							transmittance *= dT;
+							if ( transmittance < 0.005 ) break;
 
 						}
 
-						return base;
+						return vec4( toSRGB( agx( radiance * exposure ) ), 1.0 - transmittance );
 
 					}
 
@@ -442,8 +569,17 @@
 
 						bounds.x = max( bounds.x, 0.0 );
 
+						float jitter = hash( gl_FragCoord.xy );
+
+						if ( mode == 3 ) {
+
+							color = fire( vOrigin, rayDir, bounds, jitter );
+							if ( color.a == 0.0 ) discard;
+							return;
+
+						}
+
 						float stepSize = ( bounds.y - bounds.x ) / steps;
-						float jitter = fract( sin( dot( gl_FragCoord.xy, vec2( 12.9898, 78.233 ) ) ) * 43758.5453 );
 						vec3 p = vOrigin + ( bounds.x + jitter * stepSize ) * rayDir;
 
 						vec4 ac = vec4( 0.0 );
@@ -451,10 +587,9 @@
 						for ( float i = 0.0; i < steps; i += 1.0 ) {
 
 							vec4 value = texture( map, p + 0.5 ) * remap.x + remap.y;
-							float temperature = mode == 3 ? ( texture( map2, p + 0.5 ).r * remap2.x + remap2.y ) * scale : 0.0;
-							float d = density( mode == 3 ? value / scale : value ) * opacity;
+							float d = density( value ) * opacity;
 
-							ac.rgb += ( 1.0 - ac.a ) * d * shade( value, temperature, p );
+							ac.rgb += ( 1.0 - ac.a ) * d * shade( value );
 							ac.a += ( 1.0 - ac.a ) * d * ( mode == 1 ? 0.5 : 1.0 );
 
 							if ( ac.a >= 0.95 ) break;
@@ -463,8 +598,6 @@
 
 						}
 
-						if ( mode == 3 ) ac.rgb = toSRGB( aces( ac.rgb ) );
-
 						color = ac;
 
 						if ( color.a == 0.0 ) discard;
@@ -472,7 +605,10 @@
 					}
 				`;
 
-				return new THREE.RawShaderMaterial( {
+				// The simulator's extinction is per domain length; the box is a fraction of the domain.
+				const cellScale = model.cells ? ( texture.image.width + texture.image.height + texture.image.depth ) / 3 / model.cells : 1;
+
+				const material = new THREE.RawShaderMaterial( {
 					glslVersion: THREE.GLSL3,
 					uniforms: {
 						base: { value: new THREE.Color( 0xf0e0d0 ) },
@@ -488,7 +624,16 @@
 						range: { value: 0 },
 						opacity: { value: 0 },
 						steps: { value: 0 },
-						exposure: { value: 1 }
+						exposure: { value: 1 },
+						blackbodyMap: { value: blackbodyMap },
+						blackbodyRange: { value: new THREE.Vector2( 300, 3000 ) },
+						extinction: { value: 20 },
+						albedo: { value: 0.25 },
+						emission: { value: 0.3 },
+						lightDir: { value: new THREE.Vector3( ...( model.light ?? [ 0.8, 0.5, - 0.3 ] ) ).normalize() },
+						lightColor: { value: new THREE.Vector3( ...( model.lightColor ?? [ 12, 11, 9 ] ) ) },
+						ambientLight: { value: new THREE.Vector3( ...( model.ambient ?? [ 0.4, 0.42, 0.46 ] ) ) },
+						saturation: { value: 1.8 }
 					},
 					vertexShader,
 					fragmentShader,
@@ -496,6 +641,10 @@
 					transparent: true,
 					premultipliedAlpha: true
 				} );
+
+				material.userData.cellScale = cellScale;
+
+				return material;
 
 			}
 
