@@ -694,7 +694,16 @@ class VDBSequence {
 
 	createWorker() {
 
-		const worker = new Worker( new URL( './VDBWorker.js', import.meta.url ), { type: 'module' } );
+		const url = new URL( './VDBWorker.js', import.meta.url );
+
+		// A worker script must come from the page's origin. When the loader is served from a CDN,
+		// a same-origin blob module imports it instead.
+		const sameOrigin = typeof location === 'undefined' || url.origin === location.origin;
+		const source = sameOrigin ? url : URL.createObjectURL( new Blob( [ 'import ' + JSON.stringify( url.href ) + ';' ], { type: 'text/javascript' } ) );
+
+		const worker = new Worker( source, { type: 'module' } );
+		if ( sameOrigin === false ) URL.revokeObjectURL( source );
+
 		worker.tasks = new Map();
 
 		worker.onmessage = ( event ) => {
