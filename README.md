@@ -8,6 +8,8 @@ Above, 240 frames of NanoVDB, 38 MB, streamed and decoded in web workers while i
 
 <img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
 
+Above, single OpenVDB files: a torus knot fog volume, the openvdb.org smoke, its fire shaded as a blackbody from the temperature grid, and the velocity of the second smoke coloured by direction. Each grid becomes one `Data3DTexture`, raymarched in a fragment shader.
+
 ```
 npm install three-vdb-loader
 ```
