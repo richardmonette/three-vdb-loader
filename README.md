@@ -4,6 +4,10 @@ OpenVDB and NanoVDB loader for three.js.
 
 [Demo](https://richardmonette.github.io/three-vdb-loader/examples/) with an animated 240 frame fire simulation
 
+<a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="240 frame fire simulation streamed and played back at 30 fps"></a>
+
+240 frames of NanoVDB, 38 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
+
 <img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
 
 ```
