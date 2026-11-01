@@ -463,4 +463,52 @@ function isNanoVDB( buffer ) {
 
 }
 
-export { parseNanoVDB, isNanoVDB };
+/**
+ * Reads the index space bounding boxes of the grids of a NanoVDB file from the
+ * file metadata, without decompressing the grids.
+ *
+ * @param {ArrayBuffer} buffer - The file contents.
+ * @param {?Array<string>} gridNames - The grids to include, or `null` for all.
+ * @return {?Array<Array<number>>} One `[ x0, y0, z0, x1, y1, z1 ]` per non-empty grid, or `null` if the buffer is not a NanoVDB file.
+ */
+function readNanoVDBBounds( buffer, gridNames = null ) {
+
+	if ( isNanoVDB( buffer ) === false ) return null;
+
+	const bytes = new Uint8Array( buffer );
+	const view = new DataView( buffer );
+	const bounds = [];
+
+	let offset = 0;
+
+	while ( offset + FILE_HEADER_SIZE <= buffer.byteLength && view.getBigUint64( offset, true ) === MAGIC ) {
+
+		const gridCount = view.getUint16( offset + 12, true );
+		offset += FILE_HEADER_SIZE;
+
+		let skip = 0;
+
+		for ( let i = 0; i < gridCount; i ++ ) {
+
+			const nameSize = view.getUint32( offset + 136, true );
+			const name = new TextDecoder().decode( bytes.subarray( offset + FILE_METADATA_SIZE, offset + FILE_METADATA_SIZE + nameSize ) ).replace( / +$/, '' );
+			const box = [];
+
+			for ( let c = 0; c < 6; c ++ ) box.push( view.getInt32( offset + 88 + c * 4, true ) );
+
+			if ( ( gridNames === null || gridNames.includes( name ) ) && box[ 0 ] <= box[ 3 ] && box[ 1 ] <= box[ 4 ] && box[ 2 ] <= box[ 5 ] ) bounds.push( box );
+
+			skip += Number( view.getBigUint64( offset + 8, true ) ); // file size of the grid, codec included
+			offset += FILE_METADATA_SIZE + nameSize;
+
+		}
+
+		offset += skip;
+
+	}
+
+	return bounds;
+
+}
+
+export { parseNanoVDB, isNanoVDB, readNanoVDBBounds };

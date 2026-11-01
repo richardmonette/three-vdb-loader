@@ -6,13 +6,17 @@
   "main": "VDBLoader.js",
   "module": "VDBLoader.js",
   "exports": {
-    ".": "./VDBLoader.js"
+    ".": "./VDBLoader.js",
+    "./sequence": "./VDBSequenceLoader.js"
   },
   "files": [
     "VDBLoader.js",
+    "VDBSequenceLoader.js",
+    "VDBWorker.js",
     "VDBParser.js",
     "NanoVDBParser.js",
-    "VDBCodecs.js"
+    "VDBCodecs.js",
+    "tools/manifest.mjs"
   ],
   "scripts": {
     "test": "node --test"
@@ -24,7 +28,9 @@
     "nanovdb",
     "vdb",
     "volume",
-    "loader"
+    "loader",
+    "animation",
+    "sequence"
   ],
   "author": "Richard Monette",
   "license": "MIT",

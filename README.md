@@ -2,7 +2,7 @@
 
 OpenVDB and NanoVDB loader for three.js.
 
-[Demo](https://richardmonette.github.io/three-vdb-loader/)
+[Demo](https://richardmonette.github.io/three-vdb-loader/examples/) with an animated 240 frame fire simulation
 
 <img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
 
@@ -96,6 +96,46 @@ renderer.setAnimationLoop( () => {
 </body>
 </html>
 ```
+
+## Sequences
+
+Animated volumes are a sequence of files, one per frame. `VDBSequenceLoader` fetches
+them in order, decodes them in a pool of web workers a few frames ahead of playback
+and updates one set of textures in place, so memory stays bounded whatever the length
+of the sequence and playback starts as soon as the first frame is decoded.
+
+```js
+import { VDBSequenceLoader } from 'three-vdb-loader/sequence';
+
+const sequence = await new VDBSequenceLoader()
+	.setGridNames( [ 'density' ] )
+	.setTextureType( THREE.UnsignedByteType )   // a quarter of the memory of float textures
+	.loadAsync( 'models/fire/sequence.json', ( loaded, total ) => console.log( loaded + ' / ' + total ) );
+
+material.uniforms.map.value = sequence.grids[ 0 ].texture;   // updated in place as frames change
+sequence.play();
+
+function animate() {
+
+	sequence.update( timer.getDelta() );   // advances playback, never ahead of the decoded frames
+	renderer.render( scene, camera );
+
+}
+```
+
+`sequence.frame` seeks, `sequence.loop`, `pause()` and `dispose()` do what they say, and
+`sequence.bbox` is the box all frames share. The manifest is a JSON file next to the frames:
+
+```json
+{ "fps": 30, "frames": [ "frame_000.nvdb", "frame_001.nvdb" ], "bbox": [ -6, -1, 9, 70, 91, 89 ],
+  "valueRange": { "density": [ 0, 14.2 ] } }
+```
+
+`bbox` and `valueRange` are optional (the loader reads the box from the NanoVDB headers
+and measures the range if needed) but they let every frame share one texture size and one
+normalization. `node tools/manifest.mjs <directory> --fps 30` writes a manifest for a
+directory of frames. Convert simulation frames with `nanovdb_convert --fp8 -z`: the
+demo's 240 frame fire is 38 MB at 8 bits per voxel, 20 MB at 4.
 
 ## Options
 

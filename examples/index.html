@@ -41,10 +41,20 @@
 			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
 			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
 			import { VDBLoader } from '../VDBLoader.js';
+			import { VDBSequenceLoader } from '../VDBSequenceLoader.js';
 
 			const openvdb = 'https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/';
 
+			// The frame sequences are release assets. Add ?local to the URL to serve them from models/sequences/.
+			const local = new URLSearchParams( location.search ).has( 'local' );
+			const sequences = local ? 'models/sequences/' : 'https://github.com/richardmonette/three-vdb-loader/releases/download/demo-data/';
+
+			const fire = { sequence: true, grids: [ 'density', 'temperature' ], view: 'fire', scale: 1 / 1200, threshold: 0.3, range: 0.3, opacity: 0.12 };
+
 			const models = {
+				'oil fire, 240 frames, fp8 (38 MB)': { url: sequences + ( local ? 'fire_fp8/' : '' ) + 'fire_fp8.json', ...fire },
+				'oil fire, 240 frames, fp4 (20 MB)': { url: sequences + ( local ? 'fire_fp4/' : '' ) + 'fire_fp4.json', ...fire },
+				'oil fire column, one frame': { url: 'models/oil_fire_column_15s.vdb', grid: 'density', threshold: 0.4, range: 0.4, opacity: 0.1 },
 				'torus knot': { url: 'models/torusknot.vdb', grid: 'density', threshold: 0.3, range: 0.2, opacity: 0.05 },
 				'smoke (openvdb.org)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
 				'smoke2 (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
@@ -54,12 +64,13 @@
 
 			const views = {
 				scalar: [ 'flat', 'blackbody' ],
-				vector: [ 'magnitude', 'direction' ]
+				vector: [ 'magnitude', 'direction' ],
+				fire: [ 'fire', 'flat' ]
 			};
 
-			const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2 };
+			const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2, fire: 3 };
 
-			const parameters = { model: 'torus knot', view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100 };
+			const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, playing: true, frame: 0, loop: true };
 
 			const info = document.getElementById( 'info' );
 
@@ -77,7 +88,11 @@
 			const controls = new OrbitControls( camera, renderer.domElement );
 			controls.autoRotate = true;
 
+			const timer = new THREE.Timer();
+
 			let mesh = null;
+			let sequence = null;
+			let generation = 0;
 
 			const gui = new GUI();
 			gui.add( parameters, 'model', Object.keys( models ) ).onChange( load );
@@ -87,6 +102,12 @@
 			gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update );
 			gui.add( parameters, 'steps', 0, 400, 1 ).onChange( update );
 
+			const playback = gui.addFolder( 'sequence' );
+			playback.add( parameters, 'playing' ).onChange( v => sequence && ( v ? sequence.play() : sequence.pause() ) );
+			const frameController = playback.add( parameters, 'frame', 0, 1, 1 ).onChange( v => sequence && ( sequence.frame = v ) );
+			playback.add( parameters, 'loop' ).onChange( v => sequence && ( sequence.loop = v ) );
+			playback.hide();
+
 			load();
 
 			window.addEventListener( 'resize', onWindowResize );
@@ -94,24 +115,56 @@
 			async function load() {
 
 				const model = models[ parameters.model ];
+				const id = ++ generation;
 
 				info.textContent = 'loading ' + parameters.model + '...';
 
-				const grids = await new VDBLoader().setGridNames( [ model.grid ] ).loadAsync( model.url );
-				const grid = grids[ 0 ];
+				let grids;
 
-				if ( mesh !== null ) {
+				if ( model.sequence ) {
 
-					scene.remove( mesh );
-					mesh.material.uniforms.map.value.dispose();
-					mesh.material.dispose();
+					// Frames are fetched in order and decoded in workers a few frames ahead
+					// of playback, which starts as soon as the first frame is in. Byte
+					// textures normalized to the manifest's value range keep memory low.
+
+					const loaded = await new VDBSequenceLoader()
+						.setGridNames( model.grids )
+						.setTextureType( THREE.UnsignedByteType )
+						.loadAsync( model.url, ( loaded, total ) => {
+
+							if ( id === generation && sequence === null ) info.textContent = parameters.model + ' - fetching frame ' + loaded + ' / ' + total;
+
+						} );
+
+					if ( id !== generation ) {
+
+						loaded.dispose();
+						return;
+
+					}
+
+					grids = loaded.grids;
+					clear();
+					sequence = loaded;
+					sequence.loop = parameters.loop;
+					if ( parameters.playing ) sequence.play();
+
+				} else {
+
+					grids = await new VDBLoader().setGridNames( [ model.grid ] ).loadAsync( model.url );
+
+					if ( id !== generation ) return;
+
+					clear();
 
 				}
+
+				const grid = grids[ 0 ];
 
 				const center = grid.bbox.getCenter( new THREE.Vector3() );
 				const size = grid.bbox.getSize( new THREE.Vector3() ).addScalar( 1 );
 
-				mesh = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), createMaterial( grid.texture, model ) );
+				mesh = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), createMaterial( grids, model ) );
 				mesh.matrixAutoUpdate = false;
 				mesh.matrix.copy( grid.transform ).multiply( new THREE.Matrix4().makeTranslation( center ).scale( size ) );
 				mesh.updateMatrixWorld( true );
@@ -121,24 +174,56 @@
 				const radius = box.getSize( new THREE.Vector3() ).length() / 2;
 
 				box.getCenter( controls.target );
-				camera.position.copy( controls.target ).add( new THREE.Vector3( 0, 0, radius * 2 ) );
+				camera.position.copy( controls.target ).add( new THREE.Vector3( 0, 0, radius / Math.sin( THREE.MathUtils.degToRad( camera.fov / 2 ) ) ) );
 				camera.near = radius / 100;
 				camera.far = radius * 10;
 				camera.updateProjectionMatrix();
 
-				const type = grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
+				const type = model.sequence ? 'fire' : grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
 
 				parameters.view = model.view ?? views[ type ][ 0 ];
 				parameters.threshold = model.threshold;
 				parameters.range = model.range;
 				parameters.opacity = model.opacity;
 				viewController = viewController.options( views[ type ] ).onChange( update );
+
+				if ( sequence !== null ) {
+
+					parameters.frame = sequence.frame;
+					frameController.max( sequence.frameCount - 1 );
+					playback.show();
+
+				} else {
+
+					playback.hide();
+
+				}
+
 				gui.controllersRecursive().forEach( c => c.updateDisplay() );
 
 				update();
+				updateInfo();
 
-				const image = grid.texture.image;
-				info.textContent = parameters.model + ' - ' + grid.name + ' - ' + image.width + 'x' + image.height + 'x' + image.depth;
+			}
+
+			function clear() {
+
+				if ( mesh !== null ) {
+
+					scene.remove( mesh );
+					mesh.material.uniforms.map.value.dispose();
+					mesh.material.uniforms.map2.value.dispose();
+					mesh.material.dispose();
+					mesh = null;
+
+				}
+
+				if ( sequence !== null ) {
+
+					sequence.dispose();
+					sequence = null;
+
+				}
 
 			}
 
@@ -154,7 +239,42 @@
 
 			}
 
-			function createMaterial( texture, model ) {
+			function updateInfo() {
+
+				if ( mesh === null ) return;
+
+				const texture = mesh.material.uniforms.map.value;
+				const image = texture.image;
+				const types = { [ THREE.FloatType ]: 'float', [ THREE.HalfFloatType ]: 'half float', [ THREE.UnsignedByteType ]: 'byte' };
+
+				let text = parameters.model + ' - ' + image.width + 'x' + image.height + 'x' + image.depth + ' ' + types[ texture.type ] + ' texture';
+
+				if ( sequence !== null ) {
+
+					text += ' - frame ' + ( sequence.frame + 1 ) + ' / ' + sequence.frameCount;
+					if ( sequence.loaded < sequence.frameCount ) text += ' - fetched ' + sequence.loaded;
+
+				}
+
+				info.textContent = text;
+
+			}
+
+			function remap( grid ) {
+
+				// Byte textures store values normalized to the grid's value range.
+
+				return grid.texture.type === THREE.UnsignedByteType
+					? new THREE.Vector2( grid.valueRange.y - grid.valueRange.x, grid.valueRange.x )
+					: new THREE.Vector2( 1, 0 );
+
+			}
+
+			function createMaterial( grids, model ) {
+
+				const grid = grids[ 0 ];
+				const grid2 = grids[ 1 ] ?? grids[ 0 ];
+				const texture = grid.texture;
 
 				const vertexShader = /* glsl */`
 					in vec3 position;
@@ -190,6 +310,9 @@
 
 					uniform vec3 base;
 					uniform sampler3D map;
+					uniform sampler3D map2;
+					uniform vec2 remap;
+					uniform vec2 remap2;
 					uniform bool vector;
 					uniform float scale;
 					uniform int mode;
@@ -228,10 +351,11 @@
 
 					}
 
-					vec3 shade( vec4 value ) {
+					vec3 shade( vec4 value, float temperature ) {
 
 						if ( mode == 1 ) return blackbody( value.r * scale ) * 2.0;
 						if ( mode == 2 ) return 0.5 + 0.5 * normalize( value.rgb + 1e-6 );
+						if ( mode == 3 ) return vec3( 0.06, 0.055, 0.05 ) + blackbody( temperature ) * 2.5;
 
 						return base;
 
@@ -254,10 +378,11 @@
 
 						for ( float i = 0.0; i < steps; i += 1.0 ) {
 
-							vec4 value = texture( map, p + 0.5 );
-							float d = density( value ) * opacity;
+							vec4 value = texture( map, p + 0.5 ) * remap.x + remap.y;
+							float temperature = mode == 3 ? ( texture( map2, p + 0.5 ).r * remap2.x + remap2.y ) * scale : 0.0;
+							float d = density( mode == 3 ? value / scale : value ) * opacity;
 
-							ac.rgb += ( 1.0 - ac.a ) * d * shade( value );
+							ac.rgb += ( 1.0 - ac.a ) * d * shade( value, temperature );
 							ac.a += ( 1.0 - ac.a ) * d * ( mode == 1 ? 0.5 : 1.0 );
 
 							if ( ac.a >= 0.95 ) break;
@@ -278,6 +403,9 @@
 					uniforms: {
 						base: { value: new THREE.Color( 0xf0e0d0 ) },
 						map: { value: texture },
+						map2: { value: grid2.texture },
+						remap: { value: remap( grid ) },
+						remap2: { value: remap( grid2 ) },
 						vector: { value: texture.format === THREE.RGBAFormat },
 						scale: { value: model.scale ?? 1 },
 						mode: { value: 0 },
@@ -308,6 +436,21 @@
 			function animate() {
 
 				controls.update();
+
+				if ( sequence !== null ) {
+
+					timer.update();
+					sequence.update( timer.getDelta() );
+
+					if ( parameters.frame !== sequence.frame ) {
+
+						parameters.frame = sequence.frame;
+						frameController.updateDisplay();
+						updateInfo();
+
+					}
+
+				}
 
 				if ( mesh !== null ) mesh.material.uniforms.cameraPos.value.copy( camera.position );
 
