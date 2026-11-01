@@ -1,5 +1,5 @@
 {
-	"fps": 30,
+	"fps": 24,
 	"frames": [
 		"fire_fp4_000.nvdb",
 		"fire_fp4_001.nvdb",
@@ -192,72 +192,24 @@
 		"fire_fp4_188.nvdb",
 		"fire_fp4_189.nvdb",
 		"fire_fp4_190.nvdb",
-		"fire_fp4_191.nvdb",
-		"fire_fp4_192.nvdb",
-		"fire_fp4_193.nvdb",
-		"fire_fp4_194.nvdb",
-		"fire_fp4_195.nvdb",
-		"fire_fp4_196.nvdb",
-		"fire_fp4_197.nvdb",
-		"fire_fp4_198.nvdb",
-		"fire_fp4_199.nvdb",
-		"fire_fp4_200.nvdb",
-		"fire_fp4_201.nvdb",
-		"fire_fp4_202.nvdb",
-		"fire_fp4_203.nvdb",
-		"fire_fp4_204.nvdb",
-		"fire_fp4_205.nvdb",
-		"fire_fp4_206.nvdb",
-		"fire_fp4_207.nvdb",
-		"fire_fp4_208.nvdb",
-		"fire_fp4_209.nvdb",
-		"fire_fp4_210.nvdb",
-		"fire_fp4_211.nvdb",
-		"fire_fp4_212.nvdb",
-		"fire_fp4_213.nvdb",
-		"fire_fp4_214.nvdb",
-		"fire_fp4_215.nvdb",
-		"fire_fp4_216.nvdb",
-		"fire_fp4_217.nvdb",
-		"fire_fp4_218.nvdb",
-		"fire_fp4_219.nvdb",
-		"fire_fp4_220.nvdb",
-		"fire_fp4_221.nvdb",
-		"fire_fp4_222.nvdb",
-		"fire_fp4_223.nvdb",
-		"fire_fp4_224.nvdb",
-		"fire_fp4_225.nvdb",
-		"fire_fp4_226.nvdb",
-		"fire_fp4_227.nvdb",
-		"fire_fp4_228.nvdb",
-		"fire_fp4_229.nvdb",
-		"fire_fp4_230.nvdb",
-		"fire_fp4_231.nvdb",
-		"fire_fp4_232.nvdb",
-		"fire_fp4_233.nvdb",
-		"fire_fp4_234.nvdb",
-		"fire_fp4_235.nvdb",
-		"fire_fp4_236.nvdb",
-		"fire_fp4_237.nvdb",
-		"fire_fp4_238.nvdb",
-		"fire_fp4_239.nvdb"
+		"fire_fp4_191.nvdb"
 	],
 	"bbox": [
-		-6,
+		-4,
 		-1,
-		9,
-		70,
-		91,
-		89
+		10,
+		69,
+		89,
+		88
 	],
 	"valueRange": {
 		"density": [
 			0,
-			14.1953125
+			14.2578125
 		],
 		"temperature": [
 			0,
-			1489
+			1486
 		]
 	}
 }

@@ -2,9 +2,9 @@
 
 [OpenVDB](https://www.openvdb.org/) and [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) loader for three.js, [live demo](https://richardmonette.github.io/three-vdb-loader/examples/). OpenVDB is the industry standard for sparse volumes. NanoVDB packs the same data into a compact read-only layout, which makes it the better fit for the web: smaller files and far less work to decode.
 
-<a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="240 frame fire simulation streamed and played back at 30 fps"></a>
+<a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="192 frame fire simulation streamed and played back at 24 fps"></a>
 
-Above, 240 frames of NanoVDB, 38 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
+Above, 192 frames of NanoVDB, 30 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
 
 <img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
 
@@ -131,7 +131,7 @@ function animate() {
 `sequence.bbox` is the box all frames share. The manifest is a JSON file next to the frames:
 
 ```json
-{ "fps": 30, "frames": [ "frame_000.nvdb", "frame_001.nvdb" ], "bbox": [ -6, -1, 9, 70, 91, 89 ],
+{ "fps": 24, "frames": [ "frame_000.nvdb", "frame_001.nvdb" ], "bbox": [ -6, -1, 9, 70, 91, 89 ],
   "valueRange": { "density": [ 0, 14.2 ] } }
 ```
 
@@ -139,7 +139,7 @@ function animate() {
 and measures the range if needed) but they let every frame share one texture size and one
 normalization. `node tools/manifest.mjs <directory> --fps 30` writes a manifest for a
 directory of frames. Convert simulation frames with `nanovdb_convert --fp8 -z`: the
-demo's 240 frame fire is 38 MB at 8 bits per voxel, 20 MB at 4.
+demo's 192 frame fire is 30 MB at 8 bits per voxel, 16 MB at 4.
 
 ## Options
 
