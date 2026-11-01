@@ -1,6 +1,6 @@
 # three-vdb-loader
 
-OpenVDB loader for three.js.
+OpenVDB and NanoVDB loader for three.js.
 
 [Demo](https://richardmonette.github.io/three-vdb-loader/)
 
@@ -112,6 +112,24 @@ Each grid has `name`, `type`, `metadata`, `transform` (index to world space `Mat
 (a `Vector2` with the minimum and maximum voxel value) and `texture` (a `Data3DTexture`,
 or `null` for an empty grid). `UnsignedByteType` textures store values normalized to
 `valueRange`; the other types store the values as they are.
+
+## NanoVDB
+
+The loader also reads [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) files
+(`.nvdb`, version 32), the GPU oriented layout of the same data. The format is detected from
+the file contents, so `.vdb` and `.nvdb` files load the same way. Convert with the
+`nanovdb_convert` tool that ships with OpenVDB:
+
+```
+nanovdb_convert --fp8 -z -g density smoke.vdb smoke.nvdb
+```
+
+`--fp4`, `--fp8`, `--fp16` and `--fpN` quantize the voxels per leaf node to 4, 8, 16 or
+a variable number of bits and `-z` or `-b` compress the file with zip or Blosc. An
+`fp8` grid is about a quarter of the size of the equivalent OpenVDB file, which makes
+NanoVDB the format of choice for frame sequences. Supported grid types: `float`,
+`double`, `vec3f`, `vec3d`, `fp4`, `fp8`, `fp16` and `fpN`, with the `NONE`, `ZIP` and
+`BLOSC` codecs.
 
 Half float textures can be filtered on every WebGL 2 and WebGPU device, including iOS,
 and use half the memory of float textures. Set `FloatType` to keep the exact values.

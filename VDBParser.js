@@ -902,4 +902,4 @@ function parseVDB( buffer, options = {} ) {
 
 }
 
-export { parseVDB, createDense, finishGrid, fillCube };
+export { parseVDB, createDense, finishGrid, fillCube, fillNode, expandByCube, expandByNode, isOn };

@@ -13,6 +13,7 @@ import {
 	Vector2
 } from 'three';
 import { parseVDB } from './VDBParser.js';
+import { parseNanoVDB, isNanoVDB } from './NanoVDBParser.js';
 
 const OUTPUT_TYPES = new Map( [
 	[ FloatType, 'float' ],
@@ -21,11 +22,13 @@ const OUTPUT_TYPES = new Map( [
 ] );
 
 /**
- * A loader for the [OpenVDB](https://www.openvdb.org/) format.
+ * A loader for the [OpenVDB](https://www.openvdb.org/) format and its GPU
+ * oriented sibling, NanoVDB. The format is detected from the file contents.
  *
- * Scalar grids (`float`, `double` and `half`) and vector grids (`vec3s` and
- * `vec3d`) are converted into dense {@link Data3DTexture} objects covering the
- * active voxels of each grid. Vector grids use `RGBAFormat`.
+ * Scalar grids (`float`, `double` and `half`, plus the quantized NanoVDB
+ * types `fp4`, `fp8`, `fp16` and `fpN`) and vector grids (`vec3s` /
+ * `vec3f` and `vec3d`) are converted into dense {@link Data3DTexture} objects
+ * covering the active voxels of each grid. Vector grids use `RGBAFormat`.
  * Uncompressed, zip and blosc compressed files are supported.
  *
  * ```js
@@ -196,14 +199,14 @@ class VDBLoader extends Loader {
 	}
 
 	/**
-	 * Parses the given OpenVDB data and returns the grids it contains.
+	 * Parses the given OpenVDB or NanoVDB data and returns the grids it contains.
 	 *
-	 * @param {ArrayBuffer} buffer - The raw OpenVDB data as an array buffer.
+	 * @param {ArrayBuffer} buffer - The raw file data as an array buffer.
 	 * @return {Array<VDBLoader~Grid>} The parsed grids.
 	 */
 	parse( buffer ) {
 
-		const grids = parseVDB( buffer, this.parseOptions() );
+		const grids = isNanoVDB( buffer ) ? parseNanoVDB( buffer, this.parseOptions() ) : parseVDB( buffer, this.parseOptions() );
 
 		return grids.map( grid => toGrid( grid, this.textureType ) );
 
@@ -272,8 +275,8 @@ function toGrid( grid, textureType ) {
  *
  * @typedef {Object} VDBLoader~Grid
  * @property {string} name - The name of the grid.
- * @property {('float'|'double'|'half'|'vec3s'|'vec3d')} type - The value type of the grid.
- * @property {Object} metadata - The grid metadata, e.g. `class`.
+ * @property {string} type - The value type of the grid: `float`, `double`, `half`, `vec3s` or `vec3d` for OpenVDB, `float`, `double`, `fp4`, `fp8`, `fp16`, `fpN`, `vec3f` or `vec3d` for NanoVDB.
+ * @property {Object} metadata - The grid metadata, e.g. `class`. NanoVDB grids only carry `class`.
  * @property {Matrix4} transform - Transforms index space coordinates into world space.
  * @property {(number|Array<number>)} background - The background value of the grid.
  * @property {Box3} bbox - The bounding box of the texture in index space (inclusive). It covers the active voxels unless a bounding box was set on the loader.
