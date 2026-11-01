@@ -821,7 +821,7 @@ function parseVDB( buffer, options = {} ) {
 
 	const reader = new Reader( buffer );
 
-	if ( reader.int64() !== MAGIC ) {
+	if ( buffer.byteLength < 8 || reader.int64() !== MAGIC ) {
 
 		throw new Error( 'THREE.VDBLoader: Not a VDB file.' );
 
