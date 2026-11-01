@@ -63,7 +63,7 @@
 				'smoke (openvdb.org)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
 				'smoke2 (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
 				'smoke2 velocity (openvdb.org)': { url: openvdb + 'smoke2.vdb', grid: 'v', view: 'direction', scale: 0.05, threshold: 0.15, range: 0.1, opacity: 0.04 },
-				'fire (openvdb.org)': { url: openvdb + 'fire.vdb', grid: 'temperature', view: 'blackbody', scale: 0.025, threshold: 0.05, range: 0.05, opacity: 0.06 }
+				'fire (openvdb.org)': { url: openvdb + 'fire.vdb', grids: [ 'density', 'temperature' ], view: 'fire', kelvin: 33, extinction: 60 }
 			};
 
 			const views = {
@@ -109,7 +109,7 @@
 				gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update )
 			];
 			const fireControls = [
-				gui.add( parameters, 'extinction', 0, 60, 0.5 ).onChange( update ),
+				gui.add( parameters, 'extinction', 0, 200, 0.5 ).onChange( update ),
 				gui.add( parameters, 'albedo', 0, 1, 0.01 ).onChange( update ),
 				gui.add( parameters, 'emission', 0, 2, 0.01 ).onChange( update ),
 				gui.add( parameters, 'exposure', 0, 4, 0.01 ).onChange( update ),
@@ -167,7 +167,7 @@
 
 				} else {
 
-					grids = await new VDBLoader().setGridNames( [ model.grid ] ).loadAsync( model.url );
+					grids = await new VDBLoader().setGridNames( model.grids ?? [ model.grid ] ).loadAsync( model.url );
 
 					if ( id !== generation ) return;
 
@@ -195,7 +195,7 @@
 				camera.far = radius * 10;
 				camera.updateProjectionMatrix();
 
-				const type = model.sequence ? 'fire' : grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
+				const type = model.view === 'fire' ? 'fire' : grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
 
 				parameters.view = model.view ?? views[ type ][ 0 ];
 				parameters.threshold = model.threshold ?? 0;
@@ -357,6 +357,7 @@
 					// Fire view: the simulator's emission-absorption model.
 					uniform sampler2D blackbodyMap;
 					uniform vec2 blackbodyRange;
+					uniform float kelvinScale;     // kelvin per unit of the temperature grid
 					uniform float extinction;      // soot extinction per unit of box length at ambient temperature
 					uniform float albedo;          // soot single scattering albedo
 					uniform float emission;        // exposure on the blackbody radiance
@@ -428,7 +429,7 @@
 
 					float kelvinAt( vec3 p ) {
 
-						return texture( map2, p + 0.5 ).r * remap2.x + remap2.y + AMBIENT_K;
+						return ( texture( map2, p + 0.5 ).r * remap2.x + remap2.y ) * kelvinScale + AMBIENT_K;
 
 					}
 
@@ -627,6 +628,7 @@
 						exposure: { value: 1 },
 						blackbodyMap: { value: blackbodyMap },
 						blackbodyRange: { value: new THREE.Vector2( 300, 3000 ) },
+						kelvinScale: { value: model.kelvin ?? 1 },
 						extinction: { value: 20 },
 						albedo: { value: 0.25 },
 						emission: { value: 0.3 },
