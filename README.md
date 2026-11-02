@@ -139,7 +139,7 @@ function animate() {
 and measures the range if needed) but they let every frame share one texture size and one
 normalization. `node tools/manifest.mjs <directory> --fps 30` writes a manifest for a
 directory of frames. Convert simulation frames with `nanovdb_convert --fp8 -z`: the
-demo's 192 frame fire is 31 MB at 8 bits per voxel, 16 MB at 4.
+demo's 192 frame fire is 31 MB at 8 bits per voxel, 16 MB at 4. The demo sequences are locked (`tools/lock.mjs`, checked in CI) because the three.js example loads them from this repository's GitHub Pages site.
 
 ## Options
 
