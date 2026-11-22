@@ -53,7 +53,7 @@ function align( offset, alignment ) {
  */
 function parseNanoVDB( buffer, options = {} ) {
 
-	options = Object.assign( { gridNames: null, outputType: 'float', boundingBox: null, valueRange: null }, options );
+	options = Object.assign( { gridNames: null, outputType: 'float', boundingBox: null, valueRange: null, maxResolution: null }, options );
 
 	const bytes = new Uint8Array( buffer );
 	const view = new DataView( buffer );
@@ -285,7 +285,7 @@ function readGrid( data, meta, type, options ) {
 		components: type.components
 	};
 
-	const dense = createDense( name, bounds, type.components, options.boundingBox );
+	const dense = createDense( name, bounds, type.components, options.boundingBox, options.maxResolution, background );
 
 	if ( dense !== null ) {
 

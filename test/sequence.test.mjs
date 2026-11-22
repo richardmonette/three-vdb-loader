@@ -116,6 +116,44 @@ test( 'sequence from a manifest URL', async () => {
 
 } );
 
+test( 'sequence with a maximum resolution', async () => {
+
+	const loader = new VDBSequenceLoader().setGridNames( [ 'density' ] ).setTextureType( FloatType ).setWorkerLimit( 0 ).setMaxResolution( 12 );
+	const sequence = await loader.loadAsync( 'http://test/frames/sequence.json' );
+
+	const [ a ] = direct( 'http://test/frames/a.nvdb', [ 'density' ], null );
+	const [ b ] = direct( 'http://test/frames/b.nvdb', [ 'density' ], null );
+	const union = a.bbox.clone().union( b.bbox );
+
+	const grid = sequence.grids[ 0 ];
+	const texture = grid.texture;
+	const longest = Math.max( ...union.getSize( new Vector3() ).addScalar( 1 ).toArray() );
+
+	assert.ok( longest > 12 );
+	assert.equal( grid.voxelsPerTexel, Math.ceil( longest / 12 ) );
+	assert.ok( Math.max( texture.image.width, texture.image.height, texture.image.depth ) <= 12 );
+	assert.deepEqual( grid.bbox.min, union.min );
+	assert.ok( grid.bbox.containsBox( union ) );
+	assert.deepEqual( sequence.bbox, grid.bbox, 'the sequence box is the box the textures cover' );
+
+	const expected = file => new VDBLoader().setGridNames( [ 'density' ] ).setTextureType( FloatType ).setBoundingBox( union ).setMaxResolution( 12 ).parse( frames[ file ] )[ 0 ];
+
+	assert.deepEqual( texture.image.data, expected( 'http://test/frames/a.nvdb' ).texture.image.data );
+
+	await until( () => sequence.loaded === 3 );
+
+	sequence.frame = 1;
+	await until( () => sequence.frame === 1 );
+
+	const expected1 = expected( 'http://test/frames/b.nvdb' );
+
+	assert.deepEqual( expected1.bbox, grid.bbox, 'every frame covers the same box' );
+	assert.deepEqual( texture.image.data, expected1.texture.image.data );
+
+	sequence.dispose();
+
+} );
+
 test( 'sequence holds for frames that are not decoded yet', async () => {
 
 	let release;

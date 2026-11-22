@@ -148,14 +148,26 @@ const loader = new VDBLoader()
 	.setGridNames( [ 'density' ] )              // grids to load, default: all
 	.setTextureType( THREE.HalfFloatType )       // HalfFloatType (default), FloatType or UnsignedByteType
 	.setBoundingBox( box3 )                      // index space box the textures cover, default: the active voxels
-	.setValueRange( new THREE.Vector2( 0, 1 ) ); // range for UnsignedByteType normalization, default: measured
+	.setValueRange( new THREE.Vector2( 0, 1 ) )  // range for UnsignedByteType normalization, default: measured
+	.setMaxResolution( 256 );                    // largest texture size along any axis, default: no limit
 ```
 
 Each grid has `name`, `type`, `metadata`, `transform` (index to world space `Matrix4`),
 `background`, `bbox` (the index space `Box3` the texture covers, inclusive), `valueRange`
-(a `Vector2` with the minimum and maximum voxel value) and `texture` (a `Data3DTexture`,
-or `null` for an empty grid). `UnsignedByteType` textures store values normalized to
-`valueRange`; the other types store the values as they are.
+(a `Vector2` with the minimum and maximum voxel value), `voxelsPerTexel` and `texture`
+(a `Data3DTexture`, or `null` for an empty grid). `UnsignedByteType` textures store values
+normalized to `valueRange`; the other types store the values as they are.
+
+## Large grids
+
+A texture holds every voxel inside `bbox`, so a grid of 2000 voxels a side does not fit
+in memory, let alone on a phone. `setMaxResolution( n )` downsamples grids that are larger
+than `n` texels along any axis while they are parsed, without ever allocating the full
+resolution grid. Each texel is the mean of a cube of `grid.voxelsPerTexel` voxels along
+each axis (a whole number, `1` for grids that fit), and `grid.bbox` grows to a whole number
+of those cubes, so code that places the volume from `bbox` and `transform` works unchanged.
+`valueRange` is measured on the downsampled values. The option applies to OpenVDB and
+NanoVDB files and to sequences, where every frame gets the same size.
 
 ## NanoVDB
 

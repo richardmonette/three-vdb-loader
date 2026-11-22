@@ -250,7 +250,7 @@ function readGrid( reader, name, valueType, saveFloatAsHalf, options ) {
 		components: grid.components
 	};
 
-	const dense = createDense( name, bounds, grid.components, options.boundingBox );
+	const dense = createDense( name, bounds, grid.components, options.boundingBox, options.maxResolution, grid.background );
 
 	if ( dense !== null ) {
 
@@ -268,8 +268,14 @@ function readGrid( reader, name, valueType, saveFloatAsHalf, options ) {
 /**
  * Allocates the dense float array covering the active bounds of a grid, or the
  * bounding box forced by the options. Returns `null` for an empty grid.
+ *
+ * With a maximum resolution the array is downsampled: each element covers a cube of
+ * `step` voxels along each axis and the bounds grow to a whole number of cubes. The
+ * fill functions then accumulate the difference from the background, weighted by
+ * the share of the cube each voxel covers, and {@link finishGrid} adds the
+ * background back, so the full resolution grid is never allocated.
  */
-function createDense( name, activeBounds, components, boundingBox ) {
+function createDense( name, activeBounds, components, boundingBox, maxResolution = null, background = null ) {
 
 	let bounds = activeBounds;
 
@@ -289,21 +295,48 @@ function createDense( name, activeBounds, components, boundingBox ) {
 
 	}
 
-	const width = bounds[ 3 ] - bounds[ 0 ] + 1;
-	const height = bounds[ 4 ] - bounds[ 1 ] + 1;
-	const depth = bounds[ 5 ] - bounds[ 2 ] + 1;
+	let width = bounds[ 3 ] - bounds[ 0 ] + 1;
+	let height = bounds[ 4 ] - bounds[ 1 ] + 1;
+	let depth = bounds[ 5 ] - bounds[ 2 ] + 1;
+
+	let step = 1;
+
+	if ( maxResolution !== null ) {
+
+		if ( ! ( maxResolution >= 1 ) ) {
+
+			throw new Error( 'THREE.VDBLoader: Invalid maximum resolution.' );
+
+		}
+
+		step = Math.ceil( Math.max( width, height, depth ) / Math.floor( maxResolution ) );
+
+	}
+
+	if ( step > 1 ) {
+
+		width = Math.ceil( width / step );
+		height = Math.ceil( height / step );
+		depth = Math.ceil( depth / step );
+
+		bounds = [
+			bounds[ 0 ], bounds[ 1 ], bounds[ 2 ],
+			bounds[ 0 ] + width * step - 1, bounds[ 1 ] + height * step - 1, bounds[ 2 ] + depth * step - 1
+		];
+
+	}
 
 	const stride = components === 1 ? 1 : 4;
 
 	if ( width * height * depth * stride > MAX_DENSE_VALUES ) {
 
-		throw new Error( 'THREE.VDBLoader: Grid "' + name + '" is too large for a dense texture (' + width + 'x' + height + 'x' + depth + ').' );
+		throw new Error( 'THREE.VDBLoader: Grid "' + name + '" is too large for a dense texture (' + width + 'x' + height + 'x' + depth + '). Set a maximum resolution to downsample it.' );
 
 	}
 
 	const data = new Float32Array( width * height * depth * stride );
 
-	return { data, bounds, width, height, depth, stride, components };
+	return { data, bounds, width, height, depth, stride, components, step, background };
 
 }
 
@@ -335,6 +368,18 @@ function finishGrid( result, dense, options ) {
 	} else {
 
 		const { data, stride, components } = dense;
+
+		if ( dense.step > 1 ) {
+
+			// Downsampled data holds the mean difference from the background.
+
+			for ( let i = 0; i < data.length; i += stride ) {
+
+				for ( let c = 0; c < components; c ++ ) data[ i + c ] += dense.background[ c ];
+
+			}
+
+		}
 
 		if ( stride === 1 ) {
 
@@ -374,6 +419,7 @@ function finishGrid( result, dense, options ) {
 	result.height = dense === null ? 0 : dense.height;
 	result.depth = dense === null ? 0 : dense.depth;
 	result.stride = dense === null ? 0 : dense.stride;
+	result.step = dense === null ? 1 : dense.step;
 	result.data = dense === null ? null : convertValues( dense.data, options.outputType, valueRange, min, max );
 
 	return result;
@@ -735,6 +781,59 @@ function fillCube( dense, origin, size, value ) {
 
 	if ( x0 > x1 || y0 > y1 || z0 > z1 ) return;
 
+	if ( dense.step > 1 ) {
+
+		// Downsampled: add the difference from the background to every cell the cube
+		// touches, weighted by the number of voxels they share.
+
+		const { step, background, components } = dense;
+		const weight = 1 / ( step * step * step );
+		const difference = [];
+
+		let constant = true;
+
+		for ( let c = 0; c < components; c ++ ) {
+
+			difference.push( ( value[ c ] - background[ c ] ) * weight );
+			if ( difference[ c ] !== 0 ) constant = false;
+
+		}
+
+		if ( constant ) return;
+
+		const cx0 = Math.floor( ( x0 - bounds[ 0 ] ) / step ), cx1 = Math.floor( ( x1 - bounds[ 0 ] ) / step );
+		const cy0 = Math.floor( ( y0 - bounds[ 1 ] ) / step ), cy1 = Math.floor( ( y1 - bounds[ 1 ] ) / step );
+		const cz0 = Math.floor( ( z0 - bounds[ 2 ] ) / step ), cz1 = Math.floor( ( z1 - bounds[ 2 ] ) / step );
+
+		for ( let cz = cz0; cz <= cz1; cz ++ ) {
+
+			const lz = bounds[ 2 ] + cz * step;
+			const nz = Math.min( z1, lz + step - 1 ) - Math.max( z0, lz ) + 1;
+
+			for ( let cy = cy0; cy <= cy1; cy ++ ) {
+
+				const ly = bounds[ 1 ] + cy * step;
+				const nyz = nz * ( Math.min( y1, ly + step - 1 ) - Math.max( y0, ly ) + 1 );
+				const row = ( cz * height + cy ) * width;
+
+				for ( let cx = cx0; cx <= cx1; cx ++ ) {
+
+					const lx = bounds[ 0 ] + cx * step;
+					const n = nyz * ( Math.min( x1, lx + step - 1 ) - Math.max( x0, lx ) + 1 );
+					const index = ( row + cx ) * stride;
+
+					for ( let c = 0; c < components; c ++ ) data[ index + c ] += difference[ c ] * n;
+
+				}
+
+			}
+
+		}
+
+		return;
+
+	}
+
 	for ( let z = z0; z <= z1; z ++ ) {
 
 		for ( let y = y0; y <= y1; y ++ ) {
@@ -763,6 +862,30 @@ function fillNode( dense, node ) {
 
 		const { data, bounds, width, height, stride } = dense;
 		const components = stride === 1 ? 1 : 3;
+
+		if ( dense.step > 1 ) {
+
+			const { step, background } = dense;
+			const weight = 1 / ( step * step * step );
+			const sx = bounds[ 3 ] - bounds[ 0 ], sy = bounds[ 4 ] - bounds[ 1 ], sz = bounds[ 5 ] - bounds[ 2 ];
+
+			for ( let i = 0; i < 512; i ++ ) {
+
+				const x = node.origin[ 0 ] + ( i >> 6 ) - bounds[ 0 ];
+				const y = node.origin[ 1 ] + ( ( i >> 3 ) & 7 ) - bounds[ 1 ];
+				const z = node.origin[ 2 ] + ( i & 7 ) - bounds[ 2 ];
+
+				if ( x < 0 || y < 0 || z < 0 || x > sx || y > sy || z > sz ) continue;
+
+				const index = ( ( Math.floor( z / step ) * height + Math.floor( y / step ) ) * width + Math.floor( x / step ) ) * stride;
+
+				for ( let c = 0; c < components; c ++ ) data[ index + c ] += ( node.values[ i * components + c ] - background[ c ] ) * weight;
+
+			}
+
+			return;
+
+		}
 
 		for ( let i = 0; i < 512; i ++ ) {
 
@@ -813,11 +936,12 @@ function fillNode( dense, node ) {
  * @param {('float'|'half'|'uint8')} options.outputType - The element type of the voxel data.
  * @param {?Array<number>} options.boundingBox - Forced index space bounds `[ x0, y0, z0, x1, y1, z1 ]` (inclusive), or `null`.
  * @param {?Array<number>} options.valueRange - Forced `[ min, max ]` used to normalize `uint8` output, or `null` to measure it.
+ * @param {?number} options.maxResolution - The largest size of the voxel data along any axis, or `null`. Larger grids are downsampled by a whole number of voxels (`step` in the result).
  * @return {Array<Object>} The parsed grids.
  */
 function parseVDB( buffer, options = {} ) {
 
-	options = Object.assign( { gridNames: null, outputType: 'float', boundingBox: null, valueRange: null }, options );
+	options = Object.assign( { gridNames: null, outputType: 'float', boundingBox: null, valueRange: null, maxResolution: null }, options );
 
 	const reader = new Reader( buffer );
 

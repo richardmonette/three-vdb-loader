@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- `setMaxResolution()` and `grid.voxelsPerTexel`: grids larger than the limit are downsampled while they are parsed, so grids that were too large for a dense texture load
 - `tools/lock.mjs` and a CI workflow: the demo sequences are hashed and checked, since the three.js example loads them
 
 ## 0.4.2

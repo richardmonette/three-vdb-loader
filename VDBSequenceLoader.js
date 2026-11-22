@@ -519,6 +519,9 @@ class VDBSequence {
 			const result = toGrid( grid, loader.textureType );
 			this.grids.push( result );
 
+			// Downsampled frames cover a box grown to a whole number of texels.
+			if ( grid.step > 1 ) this.bbox.copy( result.bbox );
+
 		}
 
 		this.cache.set( 0, grids );

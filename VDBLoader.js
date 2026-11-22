@@ -86,6 +86,14 @@ class VDBLoader extends Loader {
 		 */
 		this.valueRange = null;
 
+		/**
+		 * The largest texture size along any axis, or `null` for no limit.
+		 *
+		 * @type {?number}
+		 * @default null
+		 */
+		this.maxResolution = null;
+
 	}
 
 	/**
@@ -150,6 +158,29 @@ class VDBLoader extends Loader {
 	setValueRange( range ) {
 
 		this.valueRange = range;
+		return this;
+
+	}
+
+	/**
+	 * Sets the largest texture size along any axis. Grids that are larger are
+	 * downsampled while they are parsed, without allocating the full resolution
+	 * grid: every texel becomes the mean of a cube of `grid.voxelsPerTexel` voxels
+	 * along each axis, and `grid.bbox` grows to a whole number of such cubes.
+	 * Grids that fit are not changed.
+	 *
+	 * @param {?number} resolution - The largest size in texels, or `null` for no limit.
+	 * @return {VDBLoader} A reference to this loader.
+	 */
+	setMaxResolution( resolution ) {
+
+		if ( resolution !== null && ! ( resolution >= 1 ) ) {
+
+			throw new Error( 'THREE.VDBLoader: Invalid maximum resolution.' );
+
+		}
+
+		this.maxResolution = resolution;
 		return this;
 
 	}
@@ -224,7 +255,8 @@ class VDBLoader extends Loader {
 			gridNames: this.gridNames,
 			outputType: OUTPUT_TYPES.get( this.textureType ),
 			boundingBox: this.boundingBox === null ? null : [ ...this.boundingBox.min.toArray(), ...this.boundingBox.max.toArray() ],
-			valueRange: this.valueRange === null ? null : [ this.valueRange.x, this.valueRange.y ]
+			valueRange: this.valueRange === null ? null : [ this.valueRange.x, this.valueRange.y ],
+			maxResolution: this.maxResolution
 		};
 
 	}
@@ -248,6 +280,7 @@ function toGrid( grid, textureType ) {
 		background: grid.background,
 		bbox: new Box3(),
 		valueRange: new Vector2().fromArray( grid.valueRange ),
+		voxelsPerTexel: grid.step,
 		texture: null
 	};
 
@@ -281,6 +314,7 @@ function toGrid( grid, textureType ) {
  * @property {(number|Array<number>)} background - The background value of the grid.
  * @property {Box3} bbox - The bounding box of the texture in index space (inclusive). It covers the active voxels unless a bounding box was set on the loader.
  * @property {Vector2} valueRange - The minimum and maximum of the values in the texture, or the range set on the loader. `UnsignedByteType` textures are normalized to it.
+ * @property {number} voxelsPerTexel - The number of voxels a texel covers along each axis: `1`, or more if the grid was downsampled to the maximum resolution set on the loader.
  * @property {?Data3DTexture} texture - The voxel values inside `bbox`, or `null` if the grid is empty. Vector grids use `RGBAFormat`.
  **/
 
