@@ -1,6 +1,6 @@
 {
   "name": "three-vdb-loader",
-  "version": "0.5.2",
+  "version": "0.6.0",
   "description": "OpenVDB and NanoVDB loader and OpenVDB exporter for three.js",
   "type": "module",
   "main": "VDBLoader.js",

@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.6.0
+
+- `VDBExporter` (`three-vdb-loader/exporter`): writes grids from `VDBLoader`, or any `Data3DTexture`, as OpenVDB files for Blender, Houdini and the OpenVDB tools. `float` and `vec3s` grids from float, half float or byte textures, zip or no compression, optional half float storage, tiles for uniform blocks and inactive background voxels. Grids loaded as `FloatType` round-trip with the same values, bounds and transform, and exported files are checked with OpenVDB 10 (`test/openvdb/`)
+- `npm test` runs `test/*.test.mjs` only
+
 ## 0.5.2
 
 - Releases are published from GitHub Actions with npm provenance
