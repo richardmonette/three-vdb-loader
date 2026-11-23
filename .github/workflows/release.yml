@@ -1,0 +1,86 @@
+name: Release
+
+# Pushing a version tag (v1.2.3) tests, publishes to npm and creates the GitHub release.
+# npm trusts this workflow through trusted publishing (OIDC), so no token is stored.
+
+on:
+  push:
+    tags: [ 'v*' ]
+
+permissions:
+  contents: write # GitHub release
+  id-token: write # npm trusted publishing and provenance
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
+      # Trusted publishing needs npm 11.5.1 or later.
+      - run: npm install -g npm@latest
+
+      - name: Tag matches package.json
+        id: version
+        run: |
+          VERSION=$(node -p "require('./package.json').version")
+          if [ "v$VERSION" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match package.json version $VERSION"
+            exit 1
+          fi
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+
+      - name: Release notes from CHANGELOG.md
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          # The lines between "## $VERSION" and the next heading, without blank lines at either end.
+          awk -v heading="## $VERSION" '
+            $0 == heading { found = 1; next }
+            /^## / { found = 0 }
+            found { lines[ n ++ ] = $0 }
+            END {
+              s = 0; while ( s < n && lines[ s ] == "" ) s ++
+              e = n - 1; while ( e >= s && lines[ e ] == "" ) e --
+              for ( i = s; i <= e; i ++ ) print lines[ i ]
+            }' CHANGELOG.md > "$RUNNER_TEMP/notes.md"
+          if [ ! -s "$RUNNER_TEMP/notes.md" ]; then
+            echo "::error::CHANGELOG.md has no section for $VERSION"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/notes.md"
+
+      - run: npm ci
+      - run: npm test
+      - name: Demo sequences are unchanged
+        run: node tools/lock.mjs
+
+      # Skipped when the version is already on npm, so a failed run can be re-run.
+      - name: Publish to npm
+        env:
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if npm view "three-vdb-loader@$VERSION" version > /dev/null 2>&1; then
+            echo "three-vdb-loader@$VERSION is already published"
+          else
+            npm publish
+          fi
+
+      - name: GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ steps.version.outputs.version }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" > /dev/null 2>&1; then
+            echo "Release $GITHUB_REF_NAME already exists"
+          else
+            gh release create "$GITHUB_REF_NAME" --title "$VERSION" --notes-file "$RUNNER_TEMP/notes.md" --verify-tag
+          fi
