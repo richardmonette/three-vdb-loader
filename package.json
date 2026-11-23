@@ -1,13 +1,14 @@
 {
   "name": "three-vdb-loader",
   "version": "0.5.2",
-  "description": "OpenVDB and NanoVDB loader for three.js",
+  "description": "OpenVDB and NanoVDB loader and OpenVDB exporter for three.js",
   "type": "module",
   "main": "VDBLoader.js",
   "module": "VDBLoader.js",
   "exports": {
     ".": "./VDBLoader.js",
-    "./sequence": "./VDBSequenceLoader.js"
+    "./sequence": "./VDBSequenceLoader.js",
+    "./exporter": "./VDBExporter.js"
   },
   "files": [
     "VDBLoader.js",
@@ -15,11 +16,13 @@
     "VDBWorker.js",
     "VDBParser.js",
     "NanoVDBParser.js",
+    "VDBExporter.js",
+    "VDBWriter.js",
     "VDBCodecs.js",
     "tools/manifest.mjs"
   ],
   "scripts": {
-    "test": "node --test"
+    "test": "node --test test/*.test.mjs"
   },
   "keywords": [
     "three",
@@ -29,6 +32,7 @@
     "vdb",
     "volume",
     "loader",
+    "exporter",
     "animation",
     "sequence"
   ],

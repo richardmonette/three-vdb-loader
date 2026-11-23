@@ -169,6 +169,43 @@ of those cubes, so code that places the volume from `bbox` and `transform` works
 `valueRange` is measured on the downsampled values. The option applies to OpenVDB and
 NanoVDB files and to sequences, where every frame gets the same size.
 
+## Exporting
+
+`VDBExporter` writes grids back to OpenVDB files that Blender, Houdini and the OpenVDB
+tools open: the grids `VDBLoader` returns, or any `Data3DTexture` you generate or simulate
+in the browser.
+
+```js
+import { VDBExporter } from 'three-vdb-loader/exporter';
+
+const buffer = new VDBExporter().parse( grids );   // or a Data3DTexture, or { name, texture, transform, ... }
+
+const link = document.createElement( 'a' );
+link.href = URL.createObjectURL( new Blob( [ buffer ] ) );
+link.download = 'volume.vdb';
+link.click();
+```
+
+`RedFormat` textures become `float` grids and `RGBAFormat` textures `vec3s` grids (alpha is
+dropped), from `FloatType`, `HalfFloatType` or `UnsignedByteType` data; byte textures need
+the `valueRange` they are normalized to. A grid may also carry a `name`, `transform`, `bbox`
+(its `min` places the texture in index space), `background`, `voxelsPerTexel` and `metadata`;
+`metadata.class` (`'fog volume'`, `'level set'`) becomes the grid class. Voxels equal to the
+background (and, in level sets, to its negation) are stored as inactive, so only the occupied
+part of the volume takes space. Downsampled grids get larger voxels in the same place.
+
+```js
+exporter.parse( grids, {
+	compression: 'zip',   // 'zip' (default) or 'none'
+	halfFloat: false,     // store half floats: half the size, reduced precision
+	tolerance: 0          // values this close to the background become inactive
+} );
+```
+
+A grid loaded as `FloatType` and exported comes back with the same values, bounds and
+transform. Exported files are checked with OpenVDB 10 itself (`test/openvdb/`): `vdb_print`
+reads them, and the copies `vdb_tool` and `nanovdb_convert` write hold the same voxels.
+
 ## NanoVDB
 
 The loader also reads [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) files

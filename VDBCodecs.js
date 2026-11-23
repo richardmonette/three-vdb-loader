@@ -545,4 +545,4 @@ function toHalfFloat( value ) {
 
 }
 
-export { inflate, bloscDecompress, lz4Decompress, fromHalfFloat, toHalfFloat };
+export { inflate, bloscDecompress, lz4Decompress, fromHalfFloat, toHalfFloat, LENGTH_BASE, LENGTH_EXTRA, DIST_BASE, DIST_EXTRA, CODE_LENGTH_ORDER };
