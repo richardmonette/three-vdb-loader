@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.5.1
+
+- Faster parsing, with byte-identical results: OpenVDB files parse 3.5 to 7 times faster and NanoVDB frames about twice as fast
+
 ## 0.5.0
 
 - `setMaxResolution()` and `grid.voxelsPerTexel`: grids larger than the limit are downsampled while they are parsed, so grids that were too large for a dense texture load
