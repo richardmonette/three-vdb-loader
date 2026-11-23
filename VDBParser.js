@@ -600,6 +600,28 @@ function readCompressedValues( reader, grid, count, valueMask ) {
 	const components = grid.components;
 	const values = new Float32Array( count * components );
 
+	if ( components === 1 ) {
+
+		const value0 = inactiveVal0[ 0 ], value1 = inactiveVal1[ 0 ];
+
+		for ( let i = 0, j = 0; i < count; i ++ ) {
+
+			if ( ( valueMask[ i >> 3 ] & ( 1 << ( i & 7 ) ) ) !== 0 ) {
+
+				values[ i ] = stored[ j ++ ];
+
+			} else {
+
+				values[ i ] = selectionMask !== null && ( selectionMask[ i >> 3 ] & ( 1 << ( i & 7 ) ) ) !== 0 ? value1 : value0;
+
+			}
+
+		}
+
+		return values;
+
+	}
+
 	for ( let i = 0, j = 0; i < count; i ++ ) {
 
 		if ( isOn( valueMask, i ) ) {
@@ -657,6 +679,10 @@ function readData( reader, grid, count ) {
 
 	}
 
+	const fast = LITTLE_ENDIAN ? readDataFast( bytes, valueType, length ) : null;
+
+	if ( fast !== null ) return fast;
+
 	const view = new DataView( bytes.buffer, bytes.byteOffset, bytes.byteLength );
 	const values = new Float32Array( length );
 
@@ -673,6 +699,77 @@ function readData( reader, grid, count ) {
 	}
 
 	return values;
+
+}
+
+const LITTLE_ENDIAN = new Uint8Array( new Uint16Array( [ 1 ] ).buffer )[ 0 ] === 1;
+
+// Typed array version of the DataView loop in readData(), with the same results.
+// Blocks with NaNs return null and take the DataView path, so NaN bit patterns
+// are converted exactly as before.
+
+function readDataFast( bytes, valueType, length ) {
+
+	const size = VALUE_SIZES[ valueType ];
+
+	// Typed arrays need aligned offsets.
+	const source = bytes.byteOffset % size === 0 ? bytes : bytes.slice();
+	const offset = source.byteOffset;
+
+	switch ( valueType ) {
+
+		case 'half': {
+
+			const halves = new Uint16Array( source.buffer, offset, length );
+			const values = new Float32Array( length );
+
+			fromHalfFloat( 0 ); // builds the table
+
+			for ( let i = 0; i < length; i ++ ) {
+
+				if ( ( halves[ i ] & 0x7c00 ) === 0x7c00 && ( halves[ i ] & 0x3ff ) !== 0 ) return null;
+				values[ i ] = fromHalfFloat( halves[ i ] );
+
+			}
+
+			return values;
+
+		}
+
+		case 'float': {
+
+			const bits = new Uint32Array( source.buffer, offset, length );
+
+			for ( let i = 0; i < length; i ++ ) {
+
+				if ( ( bits[ i ] & 0x7f800000 ) === 0x7f800000 && ( bits[ i ] & 0x7fffff ) !== 0 ) return null;
+
+			}
+
+			return new Float32Array( source.buffer, offset, length ).slice();
+
+		}
+
+		case 'double': {
+
+			const doubles = new Float64Array( source.buffer, offset, length );
+			const values = new Float32Array( length );
+
+			for ( let i = 0; i < length; i ++ ) {
+
+				const v = doubles[ i ];
+				if ( v !== v ) return null;
+				values[ i ] = v;
+
+			}
+
+			return values;
+
+		}
+
+	}
+
+	return null;
 
 }
 
@@ -730,20 +827,28 @@ function expandByNode( bounds, node ) {
 
 	if ( node.children === undefined ) {
 
-		for ( let i = 0; i < 512; i ++ ) {
+		// Each mask byte is one ( x, y ) column of 8 voxels along z.
 
-			if ( isOn( node.valueMask, i ) === false ) continue;
+		const mask = node.valueMask;
+		const [ ox, oy, oz ] = node.origin;
 
-			const x = node.origin[ 0 ] + ( i >> 6 );
-			const y = node.origin[ 1 ] + ( ( i >> 3 ) & 7 );
-			const z = node.origin[ 2 ] + ( i & 7 );
+		for ( let b = 0; b < 64; b ++ ) {
+
+			const byte = mask[ b ];
+
+			if ( byte === 0 ) continue;
+
+			const x = ox + ( b >> 3 );
+			const y = oy + ( b & 7 );
+			const z0 = oz + 31 - Math.clz32( byte & - byte );
+			const z1 = oz + 31 - Math.clz32( byte );
 
 			if ( x < bounds[ 0 ] ) bounds[ 0 ] = x;
 			if ( y < bounds[ 1 ] ) bounds[ 1 ] = y;
-			if ( z < bounds[ 2 ] ) bounds[ 2 ] = z;
+			if ( z0 < bounds[ 2 ] ) bounds[ 2 ] = z0;
 			if ( x > bounds[ 3 ] ) bounds[ 3 ] = x;
 			if ( y > bounds[ 4 ] ) bounds[ 4 ] = y;
-			if ( z > bounds[ 5 ] ) bounds[ 5 ] = z;
+			if ( z1 > bounds[ 5 ] ) bounds[ 5 ] = z1;
 
 		}
 
@@ -755,11 +860,18 @@ function expandByNode( bounds, node ) {
 
 	for ( let i = 0; i < size; i ++ ) {
 
-		const child = node.children.get( i );
+		const on = node.childMask[ i >> 3 ] | node.valueMask[ i >> 3 ];
 
-		if ( child !== undefined ) {
+		if ( on === 0 ) {
 
-			expandByNode( bounds, child );
+			i |= 7;
+			continue;
+
+		}
+
+		if ( isOn( node.childMask, i ) ) {
+
+			expandByNode( bounds, node.children.get( i ) );
 
 		} else if ( isOn( node.valueMask, i ) ) {
 
@@ -887,6 +999,45 @@ function fillNode( dense, node ) {
 
 		}
 
+		const ox = node.origin[ 0 ] - bounds[ 0 ], oy = node.origin[ 1 ] - bounds[ 1 ], oz = node.origin[ 2 ] - bounds[ 2 ];
+
+		if ( ox >= 0 && oy >= 0 && oz >= 0 && ox + 7 < width && oy + 7 < height && oz + 7 <= bounds[ 5 ] - bounds[ 2 ] ) {
+
+			// The whole leaf is inside the bounds.
+
+			const values = node.values;
+			const plane = width * height * stride;
+
+			for ( let x = 0, i = 0; x < 8; x ++ ) {
+
+				for ( let y = 0; y < 8; y ++ ) {
+
+					let index = ( ( oz * height + oy + y ) * width + ox + x ) * stride;
+
+					if ( components === 1 ) {
+
+						for ( let z = 0; z < 8; z ++, i ++, index += plane ) data[ index ] = values[ i ];
+
+					} else {
+
+						for ( let z = 0; z < 8; z ++, i ++, index += plane ) {
+
+							data[ index ] = values[ i * 3 ];
+							data[ index + 1 ] = values[ i * 3 + 1 ];
+							data[ index + 2 ] = values[ i * 3 + 2 ];
+
+						}
+
+					}
+
+				}
+
+			}
+
+			return;
+
+		}
+
 		for ( let i = 0; i < 512; i ++ ) {
 
 			const x = node.origin[ 0 ] + ( i >> 6 ) - bounds[ 0 ];
@@ -905,21 +1056,49 @@ function fillNode( dense, node ) {
 
 	}
 
-	const size = 1 << ( 3 * node.log2Dim );
+	// Only the entries that overlap the bounds, in the same order as before, so
+	// downsampled sums add up in the same order.
 
-	for ( let i = 0; i < size; i ++ ) {
+	const { bounds } = dense;
+	const { log2Dim, childTotal, origin, childMask, values } = node;
+	const dim = 1 << log2Dim;
+	const tile = 1 << childTotal;
+	const components = dense.stride === 1 ? 1 : 3;
 
-		const child = node.children.get( i );
+	const range = a => [
+		Math.max( 0, Math.floor( ( bounds[ a ] - origin[ a ] ) / tile ) ),
+		Math.min( dim - 1, Math.floor( ( bounds[ a + 3 ] - origin[ a ] ) / tile ) )
+	];
 
-		if ( child !== undefined ) {
+	const [ x0, x1 ] = range( 0 ), [ y0, y1 ] = range( 1 ), [ z0, z1 ] = range( 2 );
+	const tileOrigin = [ 0, 0, 0 ];
+	const scalar = [ 0 ];
 
-			fillNode( dense, child );
+	for ( let x = x0; x <= x1; x ++ ) {
 
-		} else {
+		for ( let y = y0; y <= y1; y ++ ) {
 
-			const components = dense.stride === 1 ? 1 : 3;
+			for ( let z = z0; z <= z1; z ++ ) {
 
-			fillCube( dense, offsetToCoord( i, node.log2Dim, node.childTotal, node.origin ), 1 << node.childTotal, node.values.subarray( i * components, ( i + 1 ) * components ) );
+				const i = ( ( ( x << log2Dim ) | y ) << log2Dim ) | z;
+
+				if ( ( childMask[ i >> 3 ] & ( 1 << ( i & 7 ) ) ) !== 0 ) {
+
+					fillNode( dense, node.children.get( i ) );
+
+				} else {
+
+					tileOrigin[ 0 ] = origin[ 0 ] + ( x << childTotal );
+					tileOrigin[ 1 ] = origin[ 1 ] + ( y << childTotal );
+					tileOrigin[ 2 ] = origin[ 2 ] + ( z << childTotal );
+
+					if ( components === 1 ) scalar[ 0 ] = values[ i ];
+
+					fillCube( dense, tileOrigin, tile, components === 1 ? scalar : values.subarray( i * 3, i * 3 + 3 ) );
+
+				}
+
+			}
 
 		}
 

@@ -337,6 +337,7 @@ function readInternal( grid, base, origin, log2Dim, childTotal ) {
 		origin,
 		log2Dim,
 		childTotal,
+		childMask,
 		valueMask,
 		values: new Float32Array( size * type.components ),
 		children: new Map()
