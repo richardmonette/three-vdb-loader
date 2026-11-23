@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.5.2
+
+- Releases are published from GitHub Actions with npm provenance
+- `package-lock.json` no longer lists `fflate`, which was removed in 0.4.0
+
 ## 0.5.1
 
 - Faster parsing, with byte-identical results: OpenVDB files parse 3.5 to 7 times faster and NanoVDB frames about twice as fast
