@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-vdb-loader - surfaces</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link rel="stylesheet" href="demo.css">
+	</head>
+
+	<body>
+		<div id="info">three-vdb-loader</div>
+		<div id="nav"><a href="index.html">demos</a> | <a href="sequence.html">animation</a> | <a href="volumes.html">volumes</a> | surfaces</div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			import * as THREE from 'three';
+			import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+			import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+			import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+			import { VDBLoader } from '../VDBLoader.js';
+			import { createSurfaceGeometry } from '../VDBSurface.js';
+
+			// Level sets are signed distances to a surface: isovalue 0 is the surface, other
+			// values offset it by that distance in world units, within the narrow band the file
+			// stores. Fog volumes are meshed where the density crosses the isovalue.
+
+			const models = {
+				'carved dodecahedron (level set)': { url: 'models/surface/dodecahedron.vdb', color: 0xd8c3a5 },
+				'blobs (level set)': { url: 'models/surface/blobs.vdb', color: 0x7fb8d8 },
+				'dimpled cube (level set)': { url: 'models/surface/dice.vdb', color: 0xe8e4dc },
+				'torus knot (fog volume)': { url: 'models/torusknot.vdb', grid: 'density', isovalue: 0.25, color: 0xc77dff },
+				'oil fire column smoke (fog volume)': { url: 'models/oil_fire_column_15s.vdb', grid: 'density', isovalue: 0.15, color: 0x9a9a9a }
+			};
+
+			// Downsampling averages the distances, so features thinner than a few texels fade.
+			const resolutions = { full: null, '128': 128, '64': 64 };
+
+			const parameters = { model: Object.keys( models )[ 0 ], isovalue: 0, resolution: 'full', normals: 'gradient', wireframe: false, rotate: true };
+
+			const status = document.getElementById( 'info' );
+
+			const renderer = new THREE.WebGLRenderer( { antialias: true } );
+			renderer.setPixelRatio( window.devicePixelRatio );
+			renderer.setSize( window.innerWidth, window.innerHeight );
+			renderer.toneMapping = THREE.ACESFilmicToneMapping;
+			renderer.setAnimationLoop( animate );
+			document.body.appendChild( renderer.domElement );
+
+			const scene = new THREE.Scene();
+			scene.background = new THREE.Color( 0x2b3a4a );
+			scene.environment = new THREE.PMREMGenerator( renderer ).fromScene( new RoomEnvironment(), 0.04 ).texture;
+			scene.environmentIntensity = 0.8;
+
+			const light = new THREE.DirectionalLight( 0xffffff, 1.5 );
+			light.position.set( 1, 2, 1.5 );
+			scene.add( light );
+
+			const camera = new THREE.PerspectiveCamera( 40, window.innerWidth / window.innerHeight, 0.01, 1000 );
+
+			const controls = new OrbitControls( camera, renderer.domElement );
+			controls.autoRotate = true;
+			controls.enableDamping = true;
+
+			const material = new THREE.MeshPhysicalMaterial( { roughness: 0.35, clearcoat: 0.6, clearcoatRoughness: 0.2, side: THREE.DoubleSide } );
+			const mesh = new THREE.Mesh( new THREE.BufferGeometry(), material );
+			scene.add( mesh );
+
+			const gui = new GUI();
+			gui.add( parameters, 'model', Object.keys( models ) ).onChange( load );
+			const isovalueController = gui.add( parameters, 'isovalue', 0, 1 ).onChange( remesh );
+			gui.add( parameters, 'resolution', Object.keys( resolutions ) ).onChange( load );
+			gui.add( parameters, 'normals', [ 'gradient', 'faces' ] ).onChange( remesh );
+			gui.add( parameters, 'wireframe' ).onChange( v => material.wireframe = v );
+			gui.add( parameters, 'rotate' ).onChange( v => controls.autoRotate = v );
+
+			let grid = null;
+			let generation = 0;
+			let pending = false;
+
+			load();
+
+			window.addEventListener( 'resize', onWindowResize );
+
+			async function load() {
+
+				const model = models[ parameters.model ];
+				const id = ++ generation;
+
+				status.textContent = 'loading ' + parameters.model + '...';
+
+				const loader = new VDBLoader()
+					.setTextureType( THREE.FloatType ) // the most accurate surface
+					.setMaxResolution( resolutions[ parameters.resolution ] );
+
+				if ( model.grid !== undefined ) loader.setGridNames( [ model.grid ] );
+
+				const grids = await loader.loadAsync( model.url );
+
+				if ( id !== generation ) return;
+
+				grid = grids[ 0 ];
+
+				material.color.setHex( model.color );
+
+				// Level sets: offsets within the narrow band. Fog volumes: densities up to the maximum.
+				const levelSet = grid.metadata.class === 'level set';
+				const low = levelSet ? - grid.background * 0.9 : 0;
+				const high = levelSet ? grid.background * 0.9 : grid.valueRange.y;
+
+				parameters.isovalue = levelSet ? 0 : model.isovalue * grid.valueRange.y;
+				isovalueController.min( low ).max( high ).step( ( high - low ) / 200 ).updateDisplay();
+
+				remesh();
+				frame();
+
+			}
+
+			function remesh() {
+
+				// At most once per frame while the slider moves.
+				pending = true;
+
+			}
+
+			function update() {
+
+				pending = false;
+
+				if ( grid === null ) return;
+
+				const start = performance.now();
+				let geometry = createSurfaceGeometry( grid, { isovalue: parameters.isovalue } );
+				const time = performance.now() - start;
+
+				if ( parameters.normals === 'faces' && geometry.index !== null ) {
+
+					geometry = geometry.toNonIndexed();
+					geometry.computeVertexNormals();
+
+				}
+
+				mesh.geometry.dispose();
+				mesh.geometry = geometry;
+
+				const triangles = ( geometry.index !== null ? geometry.index.count : geometry.attributes.position?.count ?? 0 ) / 3;
+				const { width, height, depth } = grid.texture.image;
+
+				status.textContent = parameters.model + ' - ' + width + ' x ' + height + ' x ' + depth +
+					( grid.voxelsPerTexel > 1 ? ' (' + grid.voxelsPerTexel + ' voxels per texel)' : '' ) +
+					' - ' + triangles.toLocaleString() + ' triangles in ' + time.toFixed( 0 ) + ' ms';
+
+			}
+
+			function frame() {
+
+				update();
+
+				mesh.geometry.computeBoundingSphere();
+				const sphere = mesh.geometry.boundingSphere;
+
+				if ( sphere === null || sphere.radius === 0 ) return;
+
+				controls.target.copy( sphere.center );
+				camera.position.copy( sphere.center ).add( new THREE.Vector3( 0.4, 0.3, 1 ).normalize().multiplyScalar( 1.15 * sphere.radius / Math.sin( THREE.MathUtils.degToRad( camera.fov / 2 ) ) ) );
+				camera.near = sphere.radius / 100;
+				camera.far = sphere.radius * 20;
+				camera.updateProjectionMatrix();
+
+			}
+
+			function onWindowResize() {
+
+				camera.aspect = window.innerWidth / window.innerHeight;
+				camera.updateProjectionMatrix();
+				renderer.setSize( window.innerWidth, window.innerHeight );
+
+			}
+
+			function animate() {
+
+				if ( pending ) update();
+
+				controls.update();
+				renderer.render( scene, camera );
+
+			}
+
+		</script>
+	</body>
+</html>

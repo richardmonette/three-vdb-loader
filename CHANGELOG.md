@@ -1,5 +1,10 @@
 # Changelog
 
+## Unreleased
+
+- `createSurfaceGeometry()` (`three-vdb-loader/surface`): marching cubes from a level set or fog volume to an indexed, closed, outward facing `BufferGeometry` in world space, with normals from the grid gradient. Tested on OpenVDB level set spheres and cubes against their exact radius, volume, area and normals
+- Demos are separate pages, one per feature, behind a gallery at `examples/index.html`: animation (`sequence.html`), volumes (`volumes.html`) and the new surfaces demo (`surface.html`), with level sets made with OpenVDB (`examples/models/surface/make.sh`) and fog volume isosurfaces. The animation and volumes pages share `examples/volume.js`. The README lists the demos
+
 ## 0.6.0
 
 - `VDBExporter` (`three-vdb-loader/exporter`): writes grids from `VDBLoader`, or any `Data3DTexture`, as OpenVDB files for Blender, Houdini and the OpenVDB tools. `float` and `vec3s` grids from float, half float or byte textures, zip or no compression, optional half float storage, tiles for uniform blocks and inactive background voxels. Grids loaded as `FloatType` round-trip with the same values, bounds and transform, and exported files are checked with OpenVDB 10 (`test/openvdb/`)

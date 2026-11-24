@@ -1,0 +1,641 @@
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GUI } from 'three/addons/libs/lil-gui.module.min.js';
+import { VDBLoader } from '../VDBLoader.js';
+import { VDBSequenceLoader } from '../VDBSequenceLoader.js';
+import { blackbodyTable } from './blackbody.js';
+
+/**
+ * The raymarching demo shared by sequence.html and volumes.html: loads the chosen
+ * model, a single VDB file or a sequence, into Data3DTextures and raymarches them.
+ *
+ * @param {Object} models - The models by name. See the pages for the options.
+ */
+export function startVolumeDemo( models ) {
+
+	// Blackbody radiance from 300 K to 3000 K for the fire view, sampled by temperature.
+	const blackbodyMap = new THREE.DataTexture( blackbodyTable( 300, 3000, 1024 ), 1024, 1, THREE.RGBAFormat, THREE.FloatType );
+	blackbodyMap.minFilter = blackbodyMap.magFilter = THREE.NearestFilter;
+	blackbodyMap.needsUpdate = true;
+
+	const views = {
+		scalar: [ 'flat', 'blackbody' ],
+		vector: [ 'magnitude', 'direction' ],
+		fire: [ 'fire', 'flat' ]
+	};
+
+	const modes = { flat: 0, magnitude: 0, blackbody: 1, direction: 2, fire: 3 };
+
+	const parameters = { model: Object.keys( models )[ 0 ], view: 'flat', threshold: 0, range: 0, opacity: 0, steps: 100, extinction: 20, albedo: 0.25, emission: 0.3, exposure: 1, saturation: 1.8, rotate: true, playing: true, frame: 0, loop: true };
+
+	const info = document.getElementById( 'info' );
+
+	const renderer = new THREE.WebGLRenderer();
+	renderer.setPixelRatio( window.devicePixelRatio );
+	renderer.setSize( window.innerWidth, window.innerHeight );
+	renderer.setAnimationLoop( animate );
+	document.body.appendChild( renderer.domElement );
+
+	const scene = new THREE.Scene();
+	scene.background = new THREE.Color( 0x2b3a4a );
+
+	const camera = new THREE.PerspectiveCamera( 50, window.innerWidth / window.innerHeight, 0.1, 100 );
+
+	const controls = new OrbitControls( camera, renderer.domElement );
+	controls.autoRotate = true;
+
+	const timer = new THREE.Timer();
+
+	let mesh = null;
+	let sequence = null;
+	let shownFrame = - 1, shownLoaded = - 1;
+	let generation = 0;
+
+	const gui = new GUI();
+	gui.add( parameters, 'model', Object.keys( models ) ).onChange( load );
+	let viewController = gui.add( parameters, 'view', views.scalar ).onChange( update );
+	// Density ramp for the plain views; the fire view has physical controls instead.
+	const rampControls = [
+		gui.add( parameters, 'threshold', 0, 1, 0.01 ).onChange( update ),
+		gui.add( parameters, 'range', 0, 1, 0.01 ).onChange( update ),
+		gui.add( parameters, 'opacity', 0, 1, 0.01 ).onChange( update )
+	];
+	const fireControls = [
+		gui.add( parameters, 'extinction', 0, 200, 0.5 ).onChange( update ),
+		gui.add( parameters, 'albedo', 0, 1, 0.01 ).onChange( update ),
+		gui.add( parameters, 'emission', 0, 2, 0.01 ).onChange( update ),
+		gui.add( parameters, 'exposure', 0, 4, 0.01 ).onChange( update ),
+		gui.add( parameters, 'saturation', 0, 3, 0.01 ).onChange( update )
+	];
+	gui.add( parameters, 'steps', 0, 400, 1 ).onChange( update );
+	gui.add( parameters, 'rotate' ).onChange( v => controls.autoRotate = v );
+
+	const playback = gui.addFolder( 'sequence' );
+	playback.add( parameters, 'playing' ).onChange( v => sequence && ( v ? sequence.play() : sequence.pause() ) );
+	const frameController = playback.add( parameters, 'frame', 0, 1, 1 ).onChange( v => sequence && ( sequence.frame = v ) );
+	playback.add( parameters, 'loop' ).onChange( v => sequence && ( sequence.loop = v ) );
+	playback.hide();
+
+	load();
+
+	window.addEventListener( 'resize', onWindowResize );
+
+	async function load() {
+
+		const model = models[ parameters.model ];
+		const id = ++ generation;
+
+		info.textContent = 'loading ' + parameters.model + '...';
+
+		let grids;
+
+		if ( model.sequence ) {
+
+			// Frames are fetched in order and decoded in workers a few frames ahead
+			// of playback, which starts as soon as the first frame is in. Byte
+			// textures normalized to the manifest's value range keep memory low.
+
+			const loaded = await new VDBSequenceLoader()
+				.setGridNames( model.grids )
+				.setTextureType( THREE.UnsignedByteType )
+				.loadAsync( model.url, ( loaded, total ) => {
+
+					if ( id === generation && sequence === null ) info.textContent = parameters.model + ' - fetching frame ' + loaded + ' / ' + total;
+
+				} );
+
+			if ( id !== generation ) {
+
+				loaded.dispose();
+				return;
+
+			}
+
+			grids = loaded.grids;
+			clear();
+			sequence = loaded;
+			sequence.loop = parameters.loop;
+			if ( parameters.playing ) sequence.play();
+
+		} else {
+
+			grids = await new VDBLoader().setGridNames( model.grids ?? [ model.grid ] ).loadAsync( model.url );
+
+			if ( id !== generation ) return;
+
+			clear();
+
+		}
+
+		const grid = grids[ 0 ];
+
+		const center = grid.bbox.getCenter( new THREE.Vector3() );
+		const size = grid.bbox.getSize( new THREE.Vector3() ).addScalar( 1 );
+
+		mesh = new THREE.Mesh( new THREE.BoxGeometry( 1, 1, 1 ), createMaterial( grids, model ) );
+		mesh.matrixAutoUpdate = false;
+		mesh.matrix.copy( grid.transform ).multiply( new THREE.Matrix4().makeTranslation( center ).scale( size ) );
+		mesh.updateMatrixWorld( true );
+		scene.add( mesh );
+
+		const box = new THREE.Box3().setFromObject( mesh );
+		const radius = box.getSize( new THREE.Vector3() ).length() / 2;
+
+		box.getCenter( controls.target );
+		camera.position.copy( controls.target ).add( new THREE.Vector3( 0, 0, radius / Math.sin( THREE.MathUtils.degToRad( camera.fov / 2 ) ) ) );
+		camera.near = radius / 100;
+		camera.far = radius * 10;
+		camera.updateProjectionMatrix();
+
+		const type = model.view === 'fire' ? 'fire' : grid.texture.format === THREE.RGBAFormat ? 'vector' : 'scalar';
+
+		parameters.view = model.view ?? views[ type ][ 0 ];
+		parameters.threshold = model.threshold ?? 0;
+		parameters.range = model.range ?? 0;
+		parameters.opacity = model.opacity ?? 0;
+		parameters.extinction = model.extinction ?? 20;
+		parameters.albedo = model.albedo ?? 0.25;
+		parameters.emission = model.emission ?? 0.3;
+		parameters.saturation = model.saturation ?? 1.8;
+		viewController = viewController.options( views[ type ] ).onChange( update );
+
+		if ( sequence !== null ) {
+
+			parameters.frame = sequence.frame;
+			frameController.max( sequence.frameCount - 1 );
+			playback.show();
+
+		} else {
+
+			playback.hide();
+
+		}
+
+		gui.controllersRecursive().forEach( c => c.updateDisplay() );
+
+		update();
+		updateInfo();
+
+	}
+
+	function clear() {
+
+		if ( mesh !== null ) {
+
+			scene.remove( mesh );
+			mesh.material.uniforms.map.value.dispose();
+			mesh.material.uniforms.map2.value.dispose();
+			mesh.material.dispose();
+			mesh = null;
+
+		}
+
+		if ( sequence !== null ) {
+
+			sequence.dispose();
+			sequence = null;
+			shownFrame = shownLoaded = - 1;
+
+		}
+
+	}
+
+	function update() {
+
+		if ( mesh === null ) return;
+
+		mesh.material.uniforms.mode.value = modes[ parameters.view ];
+		mesh.material.uniforms.threshold.value = parameters.threshold;
+		mesh.material.uniforms.range.value = parameters.range;
+		mesh.material.uniforms.opacity.value = parameters.opacity;
+		mesh.material.uniforms.steps.value = parameters.steps;
+		mesh.material.uniforms.exposure.value = parameters.exposure;
+		mesh.material.uniforms.extinction.value = parameters.extinction * mesh.material.userData.cellScale;
+		mesh.material.uniforms.albedo.value = parameters.albedo;
+		mesh.material.uniforms.emission.value = parameters.emission;
+		mesh.material.uniforms.saturation.value = parameters.saturation;
+
+		const fire = parameters.view === 'fire';
+		for ( const c of rampControls ) fire ? c.hide() : c.show();
+		for ( const c of fireControls ) fire ? c.show() : c.hide();
+		gui.controllersRecursive().forEach( c => c.updateDisplay() );
+
+	}
+
+	function updateInfo() {
+
+		if ( mesh === null ) return;
+
+		const texture = mesh.material.uniforms.map.value;
+		const image = texture.image;
+		const types = { [ THREE.FloatType ]: 'float', [ THREE.HalfFloatType ]: 'half float', [ THREE.UnsignedByteType ]: 'byte' };
+
+		let text = parameters.model + ' - ' + image.width + 'x' + image.height + 'x' + image.depth + ' ' + types[ texture.type ] + ' texture';
+
+		if ( sequence !== null ) {
+
+			text += ' - frame ' + ( sequence.frame + 1 ) + ' / ' + sequence.frameCount;
+			if ( sequence.loaded < sequence.frameCount ) text += ' - fetched ' + sequence.loaded;
+
+		}
+
+		info.textContent = text;
+
+	}
+
+	function remap( grid ) {
+
+		// Byte textures store values normalized to the grid's value range.
+
+		return grid.texture.type === THREE.UnsignedByteType
+			? new THREE.Vector2( grid.valueRange.y - grid.valueRange.x, grid.valueRange.x )
+			: new THREE.Vector2( 1, 0 );
+
+	}
+
+	function createMaterial( grids, model ) {
+
+		const grid = grids[ 0 ];
+		const grid2 = grids[ 1 ] ?? grids[ 0 ];
+		const texture = grid.texture;
+
+		const vertexShader = /* glsl */`
+			in vec3 position;
+
+			uniform mat4 modelMatrix;
+			uniform mat4 modelViewMatrix;
+			uniform mat4 projectionMatrix;
+			uniform vec3 cameraPos;
+
+			out vec3 vOrigin;
+			out vec3 vDirection;
+
+			void main() {
+
+				vec4 mvPosition = modelViewMatrix * vec4( position, 1.0 );
+
+				vOrigin = vec3( inverse( modelMatrix ) * vec4( cameraPos, 1.0 ) ).xyz;
+				vDirection = position - vOrigin;
+
+				gl_Position = projectionMatrix * mvPosition;
+
+			}
+		`;
+
+		const fragmentShader = /* glsl */`
+			precision highp float;
+			precision highp sampler3D;
+
+			in vec3 vOrigin;
+			in vec3 vDirection;
+
+			out vec4 color;
+
+			uniform vec3 base;
+			uniform sampler3D map;
+			uniform sampler3D map2;
+			uniform vec2 remap;
+			uniform vec2 remap2;
+			uniform bool vector;
+			uniform float scale;
+			uniform int mode;
+
+			uniform float threshold;
+			uniform float range;
+			uniform float opacity;
+			uniform float steps;
+			uniform float exposure;
+
+			// Fire view: the simulator's emission-absorption model.
+			uniform sampler2D blackbodyMap;
+			uniform vec2 blackbodyRange;
+			uniform float kelvinScale;     // kelvin per unit of the temperature grid
+			uniform float extinction;      // soot extinction per unit of box length at ambient temperature
+			uniform float albedo;          // soot single scattering albedo
+			uniform float emission;        // exposure on the blackbody radiance
+			uniform vec3 lightDir;         // toward the sun
+			uniform vec3 lightColor;
+			uniform vec3 ambientLight;
+			uniform float saturation;
+
+			const float PI = 3.14159265;
+			const float AMBIENT_K = 293.15;   // the simulation stores temperature as degrees above 20 C
+			const float DRAPER_K = 798.0;     // below this nothing glows
+			const float HG_G = 0.1;
+
+			// Per pixel ray offset without visible structure (Dave Hoskins, hash without sine).
+			float hash( vec2 p ) {
+
+				vec3 p3 = fract( vec3( p.xyx ) * 0.1031 );
+				p3 += dot( p3, p3.yzx + 33.33 );
+				return fract( ( p3.x + p3.y ) * p3.z );
+
+			}
+
+			vec2 hitBox( vec3 orig, vec3 dir ) {
+
+				vec3 invDir = 1.0 / dir;
+				vec3 tminTmp = ( vec3( - 0.5 ) - orig ) * invDir;
+				vec3 tmaxTmp = ( vec3( 0.5 ) - orig ) * invDir;
+				vec3 tmin = min( tminTmp, tmaxTmp );
+				vec3 tmax = max( tminTmp, tmaxTmp );
+				return vec2( max( tmin.x, max( tmin.y, tmin.z ) ), min( tmax.x, min( tmax.y, tmax.z ) ) );
+
+			}
+
+			vec3 blackbody( float t ) {
+
+				float k = mix( 10.0, 40.0, clamp( t, 0.0, 1.0 ) );
+
+				return clamp( vec3(
+					1.0,
+					0.390081578769 * log( k ) - 0.631841443788,
+					k <= 19.0 ? 0.0 : 0.543206789110 * log( k - 10.0 ) - 1.19625408914
+				), 0.0, 1.0 ) * t;
+
+			}
+
+			float density( vec4 value ) {
+
+				return smoothstep( threshold - range, threshold + range, ( vector ? length( value.rgb ) : value.r ) * scale );
+
+			}
+
+			vec3 shade( vec4 value ) {
+
+				if ( mode == 1 ) return blackbody( value.r * scale ) * 2.0;
+				if ( mode == 2 ) return 0.5 + 0.5 * normalize( value.rgb + 1e-6 );
+
+				return base;
+
+			}
+
+			// ---- Fire view ----
+
+			// Soot amount: the simulation's density.
+			float sootAt( vec3 p ) {
+
+				return texture( map, p + 0.5 ).r * remap.x + remap.y;
+
+			}
+
+			float kelvinAt( vec3 p ) {
+
+				return ( texture( map2, p + 0.5 ).r * remap2.x + remap2.y ) * kelvinScale + AMBIENT_K;
+
+			}
+
+			// Linear sRGB radiance of a blackbody at T kelvin, from the CIE integral tabulated in blackbodyMap.
+			vec3 blackbodyRadiance( float T ) {
+
+				int n = textureSize( blackbodyMap, 0 ).x;
+				float x = clamp( ( T - blackbodyRange.x ) / ( blackbodyRange.y - blackbodyRange.x ), 0.0, 1.0 ) * float( n - 1 );
+				int i = int( x );
+				return mix( texelFetch( blackbodyMap, ivec2( i, 0 ), 0 ).rgb, texelFetch( blackbodyMap, ivec2( min( i + 1, n - 1 ), 0 ), 0 ).rgb, x - float( i ) );
+
+			}
+
+			// Fire is a pure absorber and emitter; only cooler soot scatters (Nguyen et al. 2002).
+			float fireAlbedo( float T ) {
+
+				return albedo * clamp( ( 1500.0 - T ) / 500.0, 0.0, 1.0 );
+
+			}
+
+			float hgPhase( float cosTheta ) {
+
+				float g2 = HG_G * HG_G;
+				float d = 1.0 + g2 - 2.0 * HG_G * cosTheta;
+				return ( 1.0 - g2 ) / ( 4.0 * PI * d * sqrt( d ) );
+
+			}
+
+			// Transmittance of the soot between p and the sun, with hot gas thinner by the ideal gas law.
+			float sunTransmittance( vec3 p ) {
+
+				const int lightSteps = 10;
+				const float lightStep = 1.0 / 16.0;
+				float tau = 0.0;
+
+				for ( int i = 1; i <= lightSteps; i ++ ) {
+
+					vec3 q = p + lightDir * ( float( i ) * lightStep );
+					if ( any( greaterThan( abs( q ), vec3( 0.5 ) ) ) ) break;
+
+					float d = sootAt( q );
+					if ( d < 1e-5 ) continue;
+
+					tau += d * extinction * ( AMBIENT_K / kelvinAt( q ) ) * lightStep;
+					if ( tau > 4.6 ) return 0.0;
+
+				}
+
+				return exp( - tau );
+
+			}
+
+			// AgX display transform (Troy Sobotka; constants as in Blender 4 and three.js), with a chroma scale after the curve.
+			float agxContrast( float x ) {
+
+				float x2 = x * x, x4 = x2 * x2;
+				return 15.5 * x4 * x2 - 40.14 * x4 * x + 31.96 * x4 - 6.868 * x2 * x + 0.4298 * x2 + 0.1191 * x - 0.00232;
+
+			}
+
+			vec3 agx( vec3 c ) {
+
+				const mat3 inset = mat3(
+					0.842479062253094, 0.0423282422610123, 0.0423756549057051,
+					0.0784335999999992, 0.878468636469772, 0.0784336,
+					0.0792237451477643, 0.0791661274605434, 0.879142973793104 );
+				const mat3 outset = mat3(
+					1.19687900512017, - 0.0528968517574562, - 0.0529716355144438,
+					- 0.0980208811401368, 1.15190312990417, - 0.0980434501171241,
+					- 0.0990297440797205, - 0.0989611768448433, 1.15107367264116 );
+				const float minEv = - 12.47393, maxEv = 4.026069;
+
+				vec3 v = inset * max( c, 0.0 );
+				v = ( clamp( log2( max( v, 1e-10 ) ), minEv, maxEv ) - minEv ) / ( maxEv - minEv );
+				v = vec3( agxContrast( v.x ), agxContrast( v.y ), agxContrast( v.z ) );
+				v = pow( max( outset * v, 0.0 ), vec3( 2.2 ) );
+
+				float l = dot( v, vec3( 0.2126, 0.7152, 0.0722 ) );
+				return max( l + saturation * ( v - l ), 0.0 );
+
+			}
+
+			vec3 toSRGB( vec3 c ) {
+
+				c = clamp( c, 0.0, 1.0 );
+				return mix( c * 12.92, 1.055 * pow( c, vec3( 1.0 / 2.4 ) ) - 0.055, step( 0.0031308, c ) );
+
+			}
+
+			// Emission and single scattering through the soot, as the simulator's viewer renders it.
+			vec4 fire( vec3 origin, vec3 dir, vec2 bounds, float jitter ) {
+
+				float stepSize = ( bounds.y - bounds.x ) / steps;
+				vec3 p = origin + ( bounds.x + jitter * stepSize ) * dir;
+				float phase = hgPhase( dot( dir, lightDir ) );
+
+				float transmittance = 1.0;
+				vec3 radiance = vec3( 0.0 );
+
+				for ( float i = 0.0; i < steps; i += 1.0, p += dir * stepSize ) {
+
+					float d = sootAt( p );
+					float T = kelvinAt( p );
+
+					if ( d < 1e-5 && T < DRAPER_K ) continue;
+
+					// Hot gas expands, so the same soot mass extinguishes less.
+					float sigmaT = d * extinction * ( AMBIENT_K / T );
+					float dT = exp( - sigmaT * stepSize );
+					float a = fireAlbedo( T );
+
+					vec3 source = vec3( 0.0 );
+
+					// Thermal emission by Kirchhoff's law: what absorbs, radiates.
+					if ( T > DRAPER_K ) source += sigmaT * ( 1.0 - a ) * emission * blackbodyRadiance( T );
+
+					// In-scattered sun light through the smoke, plus unshadowed ambient.
+					if ( d > 1e-5 ) source += sigmaT * a * ( lightColor * sunTransmittance( p ) * phase + ambientLight );
+
+					float weight = sigmaT > 1e-4 ? transmittance * ( 1.0 - dT ) / sigmaT : transmittance * stepSize;
+					radiance += weight * source;
+
+					transmittance *= dT;
+					if ( transmittance < 0.005 ) break;
+
+				}
+
+				return vec4( toSRGB( agx( radiance * exposure ) ), 1.0 - transmittance );
+
+			}
+
+			void main() {
+
+				vec3 rayDir = normalize( vDirection );
+				vec2 bounds = hitBox( vOrigin, rayDir );
+
+				if ( bounds.x > bounds.y ) discard;
+
+				bounds.x = max( bounds.x, 0.0 );
+
+				float jitter = hash( gl_FragCoord.xy );
+
+				if ( mode == 3 ) {
+
+					color = fire( vOrigin, rayDir, bounds, jitter );
+					if ( color.a == 0.0 ) discard;
+					return;
+
+				}
+
+				float stepSize = ( bounds.y - bounds.x ) / steps;
+				vec3 p = vOrigin + ( bounds.x + jitter * stepSize ) * rayDir;
+
+				vec4 ac = vec4( 0.0 );
+
+				for ( float i = 0.0; i < steps; i += 1.0 ) {
+
+					vec4 value = texture( map, p + 0.5 ) * remap.x + remap.y;
+					float d = density( value ) * opacity;
+
+					ac.rgb += ( 1.0 - ac.a ) * d * shade( value );
+					ac.a += ( 1.0 - ac.a ) * d * ( mode == 1 ? 0.5 : 1.0 );
+
+					if ( ac.a >= 0.95 ) break;
+
+					p += rayDir * stepSize;
+
+				}
+
+				color = ac;
+
+				if ( color.a == 0.0 ) discard;
+
+			}
+		`;
+
+		// The simulator's extinction is per domain length; the box is a fraction of the domain.
+		const cellScale = model.cells ? ( texture.image.width + texture.image.height + texture.image.depth ) / 3 / model.cells : 1;
+
+		const material = new THREE.RawShaderMaterial( {
+			glslVersion: THREE.GLSL3,
+			uniforms: {
+				base: { value: new THREE.Color( 0xf0e0d0 ) },
+				map: { value: texture },
+				map2: { value: grid2.texture },
+				remap: { value: remap( grid ) },
+				remap2: { value: remap( grid2 ) },
+				vector: { value: texture.format === THREE.RGBAFormat },
+				scale: { value: model.scale ?? 1 },
+				mode: { value: 0 },
+				cameraPos: { value: new THREE.Vector3() },
+				threshold: { value: 0 },
+				range: { value: 0 },
+				opacity: { value: 0 },
+				steps: { value: 0 },
+				exposure: { value: 1 },
+				blackbodyMap: { value: blackbodyMap },
+				blackbodyRange: { value: new THREE.Vector2( 300, 3000 ) },
+				kelvinScale: { value: model.kelvin ?? 1 },
+				extinction: { value: 20 },
+				albedo: { value: 0.25 },
+				emission: { value: 0.3 },
+				lightDir: { value: new THREE.Vector3( ...( model.light ?? [ 0.8, 0.5, - 0.3 ] ) ).normalize() },
+				lightColor: { value: new THREE.Vector3( ...( model.lightColor ?? [ 12, 11, 9 ] ) ) },
+				ambientLight: { value: new THREE.Vector3( ...( model.ambient ?? [ 0.4, 0.42, 0.46 ] ) ) },
+				saturation: { value: 1.8 }
+			},
+			vertexShader,
+			fragmentShader,
+			side: THREE.BackSide,
+			transparent: true,
+			premultipliedAlpha: true
+		} );
+
+		material.userData.cellScale = cellScale;
+
+		return material;
+
+	}
+
+	function onWindowResize() {
+
+		camera.aspect = window.innerWidth / window.innerHeight;
+		camera.updateProjectionMatrix();
+
+		renderer.setSize( window.innerWidth, window.innerHeight );
+
+	}
+
+	function animate() {
+
+		controls.update();
+
+		if ( sequence !== null ) {
+
+			timer.update();
+			sequence.update( timer.getDelta() );
+
+			if ( shownFrame !== sequence.frame || shownLoaded !== sequence.loaded ) {
+
+				shownFrame = sequence.frame;
+				shownLoaded = sequence.loaded;
+				parameters.frame = sequence.frame;
+				frameController.updateDisplay();
+				updateInfo();
+
+			}
+
+		}
+
+		if ( mesh !== null ) mesh.material.uniforms.cameraPos.value.copy( camera.position );
+
+		renderer.render( scene, camera );
+
+	}
+
+}

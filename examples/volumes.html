@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+	<head>
+		<title>three-vdb-loader - volumes</title>
+		<meta charset="utf-8">
+		<meta name="viewport" content="width=device-width, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0">
+		<link rel="stylesheet" href="demo.css">
+	</head>
+
+	<body>
+		<div id="info">three-vdb-loader</div>
+		<div id="nav"><a href="index.html">demos</a> | <a href="sequence.html">animation</a> | volumes | <a href="surface.html">surfaces</a></div>
+
+		<script type="importmap">
+			{
+				"imports": {
+					"three": "https://cdn.jsdelivr.net/npm/three@0.186.1/build/three.module.js",
+					"three/addons/": "https://cdn.jsdelivr.net/npm/three@0.186.1/examples/jsm/"
+				}
+			}
+		</script>
+
+		<script type="module">
+
+			// Single OpenVDB files, each grid raymarched from a Data3DTexture.
+
+			import { startVolumeDemo } from './volume.js';
+
+			const openvdb = 'https://media.githubusercontent.com/media/AcademySoftwareFoundation/openvdb-website/master/download/models/';
+
+			startVolumeDemo( {
+				'oil fire column, one frame (1.4 MB)': { url: 'models/oil_fire_column_15s.vdb', grid: 'density', threshold: 0.4, range: 0.4, opacity: 0.1 },
+				'torus knot (0.8 MB)': { url: 'models/torusknot.vdb', grid: 'density', threshold: 0.3, range: 0.2, opacity: 0.05 },
+				'smoke (openvdb.org, 2.6 MB)': { url: openvdb + 'smoke.vdb', grid: 'density', threshold: 0.1, range: 0.1, opacity: 0.03 },
+				'smoke2 (openvdb.org, 30 MB)': { url: openvdb + 'smoke2.vdb', grid: 'density', threshold: 0.02, range: 0.02, opacity: 0.08 },
+				'smoke2 velocity (openvdb.org, 30 MB)': { url: openvdb + 'smoke2.vdb', grid: 'v', view: 'direction', scale: 0.05, threshold: 0.15, range: 0.1, opacity: 0.04 },
+				'fire (openvdb.org, 28 MB)': { url: openvdb + 'fire.vdb', grids: [ 'density', 'temperature' ], view: 'fire', kelvin: 33, extinction: 60 }
+			} );
+
+		</script>
+	</body>
+</html>

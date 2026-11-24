@@ -1,12 +1,21 @@
 # three-vdb-loader
 
-[OpenVDB](https://www.openvdb.org/) and [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) loader for three.js, [live demo](https://richardmonette.github.io/three-vdb-loader/examples/). OpenVDB is the industry standard for sparse volumes. NanoVDB packs the same data into a compact read-only layout, which makes it the better fit for the web: smaller files and far less work to decode.
+[OpenVDB](https://www.openvdb.org/) and [NanoVDB](https://github.com/AcademySoftwareFoundation/openvdb/tree/master/nanovdb) loader for three.js, with an OpenVDB exporter and level set meshing. OpenVDB is the industry standard for sparse volumes. NanoVDB packs the same data into a compact read-only layout, which makes it the better fit for the web: smaller files and far less work to decode.
 
-<a href="https://richardmonette.github.io/three-vdb-loader/examples/"><img src="media/fire_sequence.gif" width="400" alt="192 frame fire simulation streamed and played back at 24 fps"></a>
+## Demos
+
+All demos: [richardmonette.github.io/three-vdb-loader/examples](https://richardmonette.github.io/three-vdb-loader/examples/)
+
+- [Animation](https://richardmonette.github.io/three-vdb-loader/examples/sequence.html) (`VDBSequenceLoader`): a 192 frame NanoVDB fire simulation, fp8 or fp4, streamed and decoded in web workers while it plays.
+- [Volumes](https://richardmonette.github.io/three-vdb-loader/examples/volumes.html) (`VDBLoader`): single OpenVDB files raymarched from 3D textures. A frame of the fire, a torus knot fog volume, and the openvdb.org smoke, smoke2 (density and velocity) and fire, with flat, blackbody, direction and fire views.
+- [Surfaces](https://richardmonette.github.io/three-vdb-loader/examples/surface.html) (`createSurfaceGeometry`): level sets built with OpenVDB (a carved dodecahedron, merged blobs, a dimpled cube) and isosurfaces of the torus knot and the fire's smoke, turned into meshes. Isovalue, resolution, normals and wireframe controls.
+- [three.js `webgpu_loader_vdb`](https://github.com/mrdoob/three.js/blob/dev/examples/webgpu_loader_vdb.html): the official three.js example, which streams the fire sequence with this package and renders it with WebGPU.
+
+<a href="https://richardmonette.github.io/three-vdb-loader/examples/sequence.html"><img src="media/fire_sequence.gif" width="400" alt="192 frame fire simulation streamed and played back at 24 fps"></a>
 
 Above, 192 frames of NanoVDB, 31 MB, streamed and decoded in web workers while it plays ([mp4](media/fire_sequence.mp4)).
 
-<img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%">
+<a href="https://richardmonette.github.io/three-vdb-loader/examples/volumes.html"><img src="examples/screenshots/torusknot.jpg" width="24%"> <img src="examples/screenshots/smoke.jpg" width="24%"> <img src="examples/screenshots/fire.jpg" width="24%"> <img src="examples/screenshots/velocity.jpg" width="24%"></a>
 
 Above, single OpenVDB files: a torus knot fog volume, the openvdb.org smoke, its fire rendered from the density and temperature grids with the same model as the animation, and the velocity of the second smoke coloured by direction. Each grid becomes one `Data3DTexture`, raymarched in a fragment shader.
 
@@ -168,6 +177,31 @@ each axis (a whole number, `1` for grids that fit), and `grid.bbox` grows to a w
 of those cubes, so code that places the volume from `bbox` and `transform` works unchanged.
 `valueRange` is measured on the downsampled values. The option applies to OpenVDB and
 NanoVDB files and to sequences, where every frame gets the same size.
+
+## Surfaces
+
+<a href="https://richardmonette.github.io/three-vdb-loader/examples/surface.html"><img src="examples/screenshots/surface.jpg" width="400" alt="A level set dodecahedron with a sphere carved out of it, meshed with createSurfaceGeometry"></a>
+
+`createSurfaceGeometry` turns a scalar grid into a triangle mesh with marching cubes. Many
+VDB files are level sets, the signed distance to a surface (fluid simulations, booleans and
+sculpts from Houdini or Blender), and this gives you that surface as a normal
+`BufferGeometry` to light, shade, collide with or export.
+
+```js
+import { createSurfaceGeometry } from 'three-vdb-loader/surface';
+
+const [ grid ] = await new VDBLoader().setTextureType( THREE.FloatType ).loadAsync( 'bunny.vdb' );
+const geometry = createSurfaceGeometry( grid );   // { isovalue: 0 } by default
+
+scene.add( new THREE.Mesh( geometry, new THREE.MeshStandardMaterial() ) );
+```
+
+The geometry is indexed, in world space (from `grid.transform`), closed, and faces outwards,
+with normals from the gradient of the grid rather than averaged from the triangles. For a level
+set the isovalue is the offset from the surface: `0.1` grows it by 0.1 world units. For a fog
+volume pass a density, and the surface encloses the voxels denser than it. Float textures give
+the most accurate surface; half float and byte textures work too, and downsampled grids
+(`setMaxResolution`) give a quick low resolution mesh in the same place.
 
 ## Exporting
 
