@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.7.0
 
 - `createSurfaceGeometry()` (`three-vdb-loader/surface`): marching cubes from a level set or fog volume to an indexed, closed, outward facing `BufferGeometry` in world space, with normals from the grid gradient. Tested on OpenVDB level set spheres and cubes against their exact radius, volume, area and normals
 - Demos are separate pages, one per feature, behind a gallery at `examples/index.html`: animation (`sequence.html`), volumes (`volumes.html`) and the new surfaces demo (`surface.html`), with level sets made with OpenVDB (`examples/models/surface/make.sh`) and fog volume isosurfaces. The animation and volumes pages share `examples/volume.js`. The README lists the demos
