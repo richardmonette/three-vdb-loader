@@ -8,7 +8,8 @@
   "exports": {
     ".": "./VDBLoader.js",
     "./sequence": "./VDBSequenceLoader.js",
-    "./exporter": "./VDBExporter.js"
+    "./exporter": "./VDBExporter.js",
+    "./surface": "./VDBSurface.js"
   },
   "files": [
     "VDBLoader.js",
@@ -18,6 +19,7 @@
     "NanoVDBParser.js",
     "VDBExporter.js",
     "VDBWriter.js",
+    "VDBSurface.js",
     "VDBCodecs.js",
     "tools/manifest.mjs"
   ],
@@ -34,7 +36,10 @@
     "loader",
     "exporter",
     "animation",
-    "sequence"
+    "sequence",
+    "mesh",
+    "marching-cubes",
+    "level-set"
   ],
   "author": "Richard Monette",
   "license": "MIT",
